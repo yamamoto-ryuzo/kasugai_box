@@ -261,19 +261,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     if !result.is_empty() {
+        // 出力用フォルダの作成
+        let output_dir = Path::new("output");
+        if !output_dir.exists() {
+            fs::create_dir(output_dir)?;
+        }
+
         // CSV出力
-        let mut wtr = csv::Writer::from_path("box_photos.csv")?;
+        let csv_path = output_dir.join("box_photos.csv");
+        let mut wtr = csv::Writer::from_path(&csv_path)?;
         for r in &result {
             wtr.serialize(r)?;
         }
         wtr.flush()?;
-        println!("CSVファイル(box_photos.csv)を作成しました。");
+        println!("CSVファイル({:?})を作成しました。", csv_path);
 
         // GPKG出力
         let has_geom = result.iter().any(|r| r.latitude.is_some() && r.longitude.is_some());
         if has_geom {
-            create_geojson("box_photos.geojson", &result)?;
-            println!("GeoJSONファイル(box_photos.geojson)を作成しました。");
+            let geojson_path = output_dir.join("box_photos.geojson");
+            create_geojson(geojson_path.to_str().unwrap(), &result)?;
+            println!("GeoJSONファイル({:?})を作成しました。", geojson_path);
             println!("QGISにドラッグ＆ドロップするだけで、写真の場所を表示できます。");
         } else {
             println!("位置情報付き画像がありません。");

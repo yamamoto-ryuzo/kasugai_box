@@ -1,9 +1,9 @@
 # config.jsonをリポジトリに含めない
 config.json
+bin/config.json
+bin/output/
 *.csv
 *.gpkg
-build
-dist
+*.gpkg.png
 target/
-*.exe
 Cargo.lock
