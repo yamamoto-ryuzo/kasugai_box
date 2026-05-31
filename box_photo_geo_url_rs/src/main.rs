@@ -189,6 +189,20 @@ fn create_gpkg(db_path: &str, records: &[PhotoRecord]) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT INTO gpkg_spatial_ref_sys 
         (srs_name, srs_id, organization, organization_coordsys_id, definition, description) 
+        VALUES ('Undefined Cartesian SRS', -1, 'NONE', -1, 'undefined', 'undefined cartesian coordinate reference system')",
+        [],
+    )?;
+
+    conn.execute(
+        "INSERT INTO gpkg_spatial_ref_sys 
+        (srs_name, srs_id, organization, organization_coordsys_id, definition, description) 
+        VALUES ('Undefined Geographic SRS', 0, 'NONE', 0, 'undefined', 'undefined geographic coordinate reference system')",
+        [],
+    )?;
+
+    conn.execute(
+        "INSERT INTO gpkg_spatial_ref_sys 
+        (srs_name, srs_id, organization, organization_coordsys_id, definition, description) 
         VALUES ('WGS 84', 4326, 'EPSG', 4326, 'GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563,AUTHORITY[\"EPSG\",\"7030\"]],AUTHORITY[\"EPSG\",\"6326\"]],PRIMEM[\"Greenwich\",0,AUTHORITY[\"EPSG\",\"8901\"]],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AUTHORITY[\"EPSG\",\"4326\"]]', 'WGS 84')",
         [],
     )?;
@@ -206,11 +220,35 @@ fn create_gpkg(db_path: &str, records: &[PhotoRecord]) -> rusqlite::Result<()> {
         [],
     )?;
 
-    conn.execute(
-        "INSERT INTO gpkg_contents (table_name, data_type, identifier, srs_id) 
-        VALUES ('box_photos', 'features', 'box_photos', 4326)",
-        [],
-    )?;
+    let mut min_x = f64::MAX;
+    let mut min_y = f64::MAX;
+    let mut max_x = f64::MIN;
+    let mut max_y = f64::MIN;
+    let mut has_bounds = false;
+
+    for r in records {
+        if let (Some(lat), Some(lon)) = (r.latitude, r.longitude) {
+            min_x = min_x.min(lon);
+            max_x = max_x.max(lon);
+            min_y = min_y.min(lat);
+            max_y = max_y.max(lat);
+            has_bounds = true;
+        }
+    }
+
+    if has_bounds {
+        conn.execute(
+            "INSERT INTO gpkg_contents (table_name, data_type, identifier, srs_id, min_x, min_y, max_x, max_y) 
+            VALUES ('box_photos', 'features', 'box_photos', 4326, ?, ?, ?, ?)",
+            rusqlite::params![min_x, min_y, max_x, max_y],
+        )?;
+    } else {
+        conn.execute(
+            "INSERT INTO gpkg_contents (table_name, data_type, identifier, srs_id) 
+            VALUES ('box_photos', 'features', 'box_photos', 4326)",
+            [],
+        )?;
+    }
 
     conn.execute(
         "CREATE TABLE gpkg_geometry_columns (
@@ -237,7 +275,7 @@ fn create_gpkg(db_path: &str, records: &[PhotoRecord]) -> rusqlite::Result<()> {
     conn.execute(
         "CREATE TABLE box_photos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            geom BLOB,
+            geom POINT,
             name TEXT,
             full_name TEXT,
             url TEXT,

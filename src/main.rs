@@ -4,7 +4,6 @@ use inquire::Text;
 use exif::{In, Reader, Tag, Value};
 use regex::Regex;
 use reqwest::{header, Client};
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs;
@@ -166,113 +165,34 @@ fn get_image_files_recursive<'a>(
     .boxed()
 }
 
-fn create_gpkg(db_path: &str, records: &[PhotoRecord]) -> rusqlite::Result<()> {
-    if Path::new(db_path).exists() {
-        fs::remove_file(db_path).unwrap_or_default();
-    }
-    let conn = Connection::open(db_path)?;
-    conn.execute("PRAGMA application_id = 1196444487;", [])?;
-    conn.execute("PRAGMA user_version = 10300;", [])?;
-
-    conn.execute(
-        "CREATE TABLE gpkg_spatial_ref_sys (
-            srs_name TEXT NOT NULL,
-            srs_id INTEGER NOT NULL PRIMARY KEY,
-            organization TEXT NOT NULL,
-            organization_coordsys_id INTEGER NOT NULL,
-            definition  TEXT NOT NULL,
-            description TEXT
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "INSERT INTO gpkg_spatial_ref_sys 
-        (srs_name, srs_id, organization, organization_coordsys_id, definition, description) 
-        VALUES ('WGS 84', 4326, 'EPSG', 4326, 'GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563,AUTHORITY[\"EPSG\",\"7030\"]],AUTHORITY[\"EPSG\",\"6326\"]],PRIMEM[\"Greenwich\",0,AUTHORITY[\"EPSG\",\"8901\"]],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AUTHORITY[\"EPSG\",\"4326\"]]', 'WGS 84')",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE gpkg_contents (
-            table_name TEXT NOT NULL PRIMARY KEY,
-            data_type TEXT NOT NULL,
-            identifier TEXT UNIQUE,
-            description TEXT DEFAULT '',
-            last_change DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-            min_x DOUBLE, min_y DOUBLE, max_x DOUBLE, max_y DOUBLE,
-            srs_id INTEGER
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "INSERT INTO gpkg_contents (table_name, data_type, identifier, srs_id) 
-        VALUES ('box_photos', 'features', 'box_photos', 4326)",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE gpkg_geometry_columns (
-            table_name TEXT NOT NULL,
-            column_name TEXT NOT NULL,
-            geometry_type_name TEXT NOT NULL,
-            srs_id INTEGER NOT NULL,
-            z TINYINT NOT NULL,
-            m TINYINT NOT NULL,
-            CONSTRAINT pk_geom_cols PRIMARY KEY (table_name, column_name),
-            CONSTRAINT uk_gc_table_name UNIQUE (table_name),
-            CONSTRAINT fk_gc_tn FOREIGN KEY (table_name) REFERENCES gpkg_contents(table_name),
-            CONSTRAINT fk_gc_srs FOREIGN KEY (srs_id) REFERENCES gpkg_spatial_ref_sys (srs_id)
-        )",
-        [],
-    )?;
-
-    conn.execute(
-        "INSERT INTO gpkg_geometry_columns (table_name, column_name, geometry_type_name, srs_id, z, m) 
-        VALUES ('box_photos', 'geom', 'POINT', 4326, 0, 0)",
-        [],
-    )?;
-
-    conn.execute(
-        "CREATE TABLE box_photos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            geom BLOB,
-            name TEXT,
-            full_name TEXT,
-            url TEXT,
-            date_taken TEXT
-        )",
-        [],
-    )?;
-
-    let mut stmt = conn.prepare(
-        "INSERT INTO box_photos (geom, name, full_name, url, date_taken) 
-        VALUES (?, ?, ?, ?, ?)"
-    )?;
-
+fn create_geojson(file_path: &str, records: &[PhotoRecord]) -> Result<(), Box<dyn Error>> {
+    let mut features = Vec::new();
     for r in records {
         if let (Some(lat), Some(lon)) = (r.latitude, r.longitude) {
-            let mut blob = Vec::with_capacity(29);
-            blob.extend_from_slice(b"GP");
-            blob.push(0);
-            blob.push(1);
-            blob.extend_from_slice(&4326i32.to_le_bytes());
-            blob.push(1);
-            blob.extend_from_slice(&1u32.to_le_bytes());
-            blob.extend_from_slice(&lon.to_le_bytes());
-            blob.extend_from_slice(&lat.to_le_bytes());
-
-            stmt.execute(rusqlite::params![
-                blob,
-                r.name,
-                r.full_name,
-                r.url,
-                r.date_taken
-            ])?;
+            let feature = serde_json::json!({
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [lon, lat]
+                },
+                "properties": {
+                    "name": &r.name,
+                    "full_name": &r.full_name,
+                    "url": &r.url,
+                    "date_taken": &r.date_taken
+                }
+            });
+            features.push(feature);
         }
     }
+    
+    let feature_collection = serde_json::json!({
+        "type": "FeatureCollection",
+        "features": features
+    });
 
+    let file = fs::File::create(file_path)?;
+    serde_json::to_writer(file, &feature_collection)?;
     Ok(())
 }
 
@@ -352,9 +272,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // GPKG出力
         let has_geom = result.iter().any(|r| r.latitude.is_some() && r.longitude.is_some());
         if has_geom {
-            create_gpkg("box_photos.gpkg", &result)?;
-            println!("GPKGファイル(box_photos.gpkg)を作成しました。");
-            println!("QGISで「url」列を使ってアクションやHTMLポップアップで写真を表示できます。");
+            create_geojson("box_photos.geojson", &result)?;
+            println!("GeoJSONファイル(box_photos.geojson)を作成しました。");
+            println!("QGISにドラッグ＆ドロップするだけで、写真の場所を表示できます。");
         } else {
             println!("位置情報付き画像がありません。");
         }
