@@ -50,10 +50,18 @@ Boxのフォルダ内の画像ファイルを取得し、EXIF情報から緯度�
 
 ## 💻 開発者向け情報
 
-### 開発サーバー起動
+### 簡易起動スクリプト
 
 ```sh
+# 開発モード
 cargo tauri dev
+
+# または Python ランチャーから
+cd C:\devin\boxPhotoGeoURL
+python run.py
+
+# リリース版を起動
+python run.py --release
 ```
 
 ### リリースビルド
