@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Box Photo Geo URL</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <main class="container">
+      <h1>Box Photo Geo URL</h1>
+      <p>Boxフォルダ内の画像からEXIFの位置情報を抽出し、CSV・GeoJSONを出力します。</p>
+
+      <div class="form">
+        <label>
+          開発者トークン
+          <input type="password" id="token" placeholder="Box Developer Token" />
+        </label>
+        <label>
+          フォルダURL
+          <input type="text" id="folder-url" placeholder="https://app.box.com/folder/123456" />
+        </label>
+        <label>
+          出力フォルダ名
+          <input type="text" id="output-dir" value="box_photo_geo_url/output" />
+        </label>
+        <button id="run-btn" type="button">実行</button>
+      </div>
+
+      <div id="status"></div>
+
+      <table id="results" hidden>
+        <thead>
+          <tr>
+            <th>ファイル</th>
+            <th>緯度</th>
+            <th>経度</th>
+            <th>撮影日</th>
+            <th>URL</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </main>
+  </body>
+</html>

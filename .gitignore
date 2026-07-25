@@ -1,9 +1,17 @@
 # config.jsonをリポジトリに含めない
 config.json
-bin/config.json
-bin/output/
 *.csv
 *.gpkg
 *.gpkg.png
-target/
-Cargo.lock
+
+# Node / Tauri
+node_modules/
+/dist
+/src-tauri/target/
+/src-tauri/Cargo.lock
+/src-tauri/gen/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/settings.json
