@@ -12,7 +12,10 @@ use std::path::PathBuf;
 #[derive(Serialize, Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
-    pub access_token: Option<String>,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub box_subject_type: Option<String>,
+    pub box_subject_id: Option<String>,
     pub folder_url: Option<String>,
 }
 
@@ -39,6 +42,41 @@ pub struct PhotoRecord {
     pub longitude: Option<f64>,
     pub date_taken: Option<String>,
     pub url: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct BoxTokenResponse {
+    access_token: String,
+    expires_in: Option<u64>,
+}
+
+async fn get_box_access_token(
+    client_id: &str,
+    client_secret: &str,
+    subject_type: &str,
+    subject_id: &str,
+) -> Result<String> {
+    let mut params = std::collections::HashMap::new();
+    params.insert("grant_type", "client_credentials");
+    params.insert("client_id", client_id);
+    params.insert("client_secret", client_secret);
+    params.insert("box_subject_type", subject_type);
+    params.insert("box_subject_id", subject_id);
+
+    let resp = Client::new()
+        .post("https://api.box.com/oauth2/token")
+        .form(&params)
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(anyhow::anyhow!("Box token error {}: {}", status, text));
+    }
+
+    let data: BoxTokenResponse = resp.json().await?;
+    Ok(data.access_token)
 }
 
 #[derive(Serialize)]
@@ -232,10 +270,21 @@ fn create_geojson(file_path: &Path, records: &[PhotoRecord]) -> Result<()> {
 }
 
 async fn run_process(
-    token: String,
+    client_id: String,
+    client_secret: String,
+    box_subject_type: String,
+    box_subject_id: String,
     folder_url: String,
     output_dir: String,
 ) -> Result<ProcessResult> {
+    let token = get_box_access_token(
+        &client_id,
+        &client_secret,
+        &box_subject_type,
+        &box_subject_id,
+    )
+    .await?;
+
     let mut headers = header::HeaderMap::new();
     headers.insert(
         header::AUTHORIZATION,
@@ -330,13 +379,23 @@ fn save_config_cmd(config: Config) -> Result<(), String> {
 
 #[tauri::command]
 async fn process_photos(
-    token: String,
+    client_id: String,
+    client_secret: String,
+    box_subject_type: String,
+    box_subject_id: String,
     folder_url: String,
     output_dir: String,
 ) -> Result<ProcessResult, String> {
-    run_process(token, folder_url, output_dir)
-        .await
-        .map_err(|e| e.to_string())
+    run_process(
+        client_id,
+        client_secret,
+        box_subject_type,
+        box_subject_id,
+        folder_url,
+        output_dir,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

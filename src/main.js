@@ -4,7 +4,10 @@ const $ = (id) => document.getElementById(id);
 
 async function loadSavedConfig() {
   const config = await invoke("load_saved_config");
-  $("token").value = config.accessToken || "";
+  $("client-id").value = config.clientId || "";
+  $("client-secret").value = config.clientSecret || "";
+  $("box-subject-type").value = config.boxSubjectType || "enterprise";
+  $("box-subject-id").value = config.boxSubjectId || "";
   $("folder-url").value = config.folderUrl || "";
 }
 
@@ -41,12 +44,15 @@ function escapeHtml(text) {
 }
 
 async function run() {
-  const token = $("token").value.trim();
+  const clientId = $("client-id").value.trim();
+  const clientSecret = $("client-secret").value.trim();
+  const boxSubjectType = $("box-subject-type").value.trim();
+  const boxSubjectId = $("box-subject-id").value.trim();
   const folderUrl = $("folder-url").value.trim();
   const outputDir = $("output-dir").value.trim() || "box_photo_geo_url/output";
 
-  if (!token || !folderUrl) {
-    $("status").textContent = "トークンとフォルダURLを入力してください。";
+  if (!clientId || !clientSecret || !boxSubjectId || !folderUrl) {
+    $("status").textContent = "クライアントID、シークレット、Subject ID、フォルダURLを入力してください。";
     return;
   }
 
@@ -56,10 +62,13 @@ async function run() {
 
   try {
     await invoke("save_config_cmd", {
-      config: { accessToken: token, folderUrl },
+      config: { clientId, clientSecret, boxSubjectType, boxSubjectId, folderUrl },
     });
     const result = await invoke("process_photos", {
-      token,
+      clientId,
+      clientSecret,
+      boxSubjectType,
+      boxSubjectId,
       folderUrl,
       outputDir,
     });
@@ -76,7 +85,23 @@ async function run() {
   }
 }
 
+function initTabs() {
+  const buttons = document.querySelectorAll(".tab-btn");
+  const panels = document.querySelectorAll(".tab-panel");
+
+  for (const btn of buttons) {
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.tab;
+      for (const b of buttons) b.classList.remove("active");
+      for (const p of panels) p.classList.remove("active");
+      btn.classList.add("active");
+      $(`tab-${target}`).classList.add("active");
+    });
+  }
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   loadSavedConfig();
+  initTabs();
   $("run-btn").addEventListener("click", run);
 });

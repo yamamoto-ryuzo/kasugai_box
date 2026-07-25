@@ -13,36 +13,63 @@
       <h1>Box Photo Geo URL</h1>
       <p>Boxフォルダ内の画像からEXIFの位置情報を抽出し、CSV・GeoJSONを出力します。</p>
 
-      <div class="form">
-        <label>
-          開発者トークン
-          <input type="password" id="token" placeholder="Box Developer Token" />
-        </label>
-        <label>
-          フォルダURL
-          <input type="text" id="folder-url" placeholder="https://app.box.com/folder/123456" />
-        </label>
-        <label>
-          出力フォルダ名
-          <input type="text" id="output-dir" value="box_photo_geo_url/output" />
-        </label>
-        <button id="run-btn" type="button">実行</button>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="photo">Photo</button>
+        <button class="tab-btn" data-tab="settings">設定</button>
       </div>
 
-      <div id="status"></div>
+      <section id="tab-photo" class="tab-panel active">
+        <div class="form">
+          <label>
+            フォルダURL
+            <input type="text" id="folder-url" placeholder="https://app.box.com/folder/123456" />
+          </label>
+          <label>
+            出力フォルダ名
+            <input type="text" id="output-dir" value="box_photo_geo_url/output" />
+          </label>
+          <button id="run-btn" type="button">実行</button>
+        </div>
 
-      <table id="results" hidden>
-        <thead>
-          <tr>
-            <th>ファイル</th>
-            <th>緯度</th>
-            <th>経度</th>
-            <th>撮影日</th>
-            <th>URL</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+        <div id="status"></div>
+
+        <table id="results" hidden>
+          <thead>
+            <tr>
+              <th>ファイル</th>
+              <th>緯度</th>
+              <th>経度</th>
+              <th>撮影日</th>
+              <th>URL</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section id="tab-settings" class="tab-panel">
+        <div class="form">
+          <label>
+            クライアントID
+            <input type="text" id="client-id" placeholder="Box Client ID" />
+          </label>
+          <label>
+            クライアントシークレット
+            <input type="password" id="client-secret" placeholder="Box Client Secret" />
+          </label>
+          <label>
+            Box Subject Type
+            <select id="box-subject-type">
+              <option value="enterprise">enterprise</option>
+              <option value="user">user</option>
+            </select>
+          </label>
+          <label>
+            Box Subject ID
+            <input type="text" id="box-subject-id" placeholder="Enterprise ID または User ID" />
+          </label>
+        </div>
+      </section>
     </main>
   </body>
 </html>

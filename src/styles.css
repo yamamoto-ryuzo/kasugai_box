@@ -24,10 +24,47 @@ h1 {
   font-size: 1.5rem;
 }
 
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 2px solid #ddd;
+  margin-bottom: 1rem;
+}
+
+.tab-btn {
+  background: #fff;
+  color: #222;
+  border: none;
+  border-radius: 4px 4px 0 0;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: #0078d7;
+  color: #fff;
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
 .form {
   display: grid;
   gap: 0.75rem;
   margin-bottom: 1rem;
+}
+
+select {
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
 }
 
 label {
