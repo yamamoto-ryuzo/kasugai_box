@@ -60,6 +60,9 @@ cargo tauri dev
 cd C:\devin\boxPhotoGeoURL
 python run.py
 
+# リリースビルド
+python run.py -B
+
 # リリース版を起動
 python run.py --release
 ```
