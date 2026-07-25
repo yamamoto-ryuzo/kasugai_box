@@ -34,6 +34,7 @@ def main():
     parser = argparse.ArgumentParser(description="Box Photo Geo URL ランチャー")
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
+        "-b",
         "-B",
         "--build",
         action="store_true",
