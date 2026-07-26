@@ -616,7 +616,8 @@ async fn search_box(token: &str, query: &str, offset: usize) -> Result<SearchRes
                             format!("https://app.box.com/file/{}", i.id)
                         }
                     });
-                format!("<a href=\"{}\" target=\"_blank\">{}</a>", escape_html(&url), escape_html(&path))
+                let safe_url = escape_html(&url);
+                format!("<a href=\"{}\" target=\"_blank\">{}</a>", safe_url, escape_html(&path))
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -951,6 +952,13 @@ async fn open_url(url: String) -> Result<(), String> {
     opener::open_browser(&url).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn copy_to_clipboard(text: String) -> Result<(), String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clipboard.set_text(text).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -966,7 +974,8 @@ pub fn run() {
             developer_token_login,
             box_oauth_status,
             box_oauth_logout,
-            open_url
+            open_url,
+            copy_to_clipboard
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

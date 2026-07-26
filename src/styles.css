@@ -232,3 +232,21 @@ tr:nth-child(even) {
 .chat-input-row button {
   padding: 0.5rem 1rem;
 }
+
+.copy-all {
+  align-self: center;
+  padding: 0.25rem 0.5rem;
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  background: #f0f0f0;
+  color: #222;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chat-message.user .copy-all {
+  order: -1;
+  margin-left: 0;
+  margin-right: 0.5rem;
+}

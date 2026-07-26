@@ -204,6 +204,25 @@ function addChatMessage(role, text, isHtml = false) {
     bubble.textContent = text;
   }
   row.appendChild(bubble);
+
+  if (role === "assistant") {
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "copy-all";
+    copyBtn.textContent = "コピー";
+    copyBtn.addEventListener("click", () => {
+      const links = bubble.querySelectorAll("a[target='_blank']");
+      let copyText;
+      if (links.length > 0) {
+        copyText = Array.from(links).map((a) => `${a.textContent}: ${a.href}`).join("\n");
+      } else {
+        copyText = bubble.textContent;
+      }
+      invoke("copy_to_clipboard", { text: copyText });
+    });
+    row.appendChild(copyBtn);
+  }
+
   container.appendChild(row);
   container.scrollTop = container.scrollHeight;
 }
