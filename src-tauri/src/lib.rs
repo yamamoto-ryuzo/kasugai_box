@@ -513,7 +513,7 @@ async fn run_mcp_chat(text: String) -> Result<McpChatResponse> {
                 + "  help        このヘルプを表示\n"
                 + "  me          ログインユーザー情報を表示\n"
                 + "  folder <id> フォルダ内のアイテムを一覧\n"
-                + "  search <q>  ファイルを検索"
+                + "  search <q>  Box標準検索（ファイル名・メタデータ・文書内テキスト）"
         }
         "me" | "user" => {
             let body = box_api_get(&token, "https://api.box.com/2.0/users/me").await?;
