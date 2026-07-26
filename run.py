@@ -1,12 +1,26 @@
 #!/usr/bin/env python3
 """kasugai_box API sidecar ランチャー"""
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SERVER_DIR = ROOT / "server"
+DOWNLOAD_DIR = ROOT / "download"
+TARGET_EXE = SERVER_DIR / "target" / "release" / "kasugai_box.exe"
+DOWNLOAD_EXE = DOWNLOAD_DIR / "kasugai_box.exe"
+
+
+def _copy_to_download():
+    """リリースビルド後、ダウンロード用に exe を download/ にコピーする"""
+    DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    if TARGET_EXE.exists():
+        shutil.copy2(TARGET_EXE, DOWNLOAD_EXE)
+        print(f"コピーしました: {DOWNLOAD_EXE}")
+    else:
+        print(f"ビルド済み実行ファイルが見つかりません: {TARGET_EXE}", file=sys.stderr)
 
 
 def run_dev():
@@ -17,16 +31,17 @@ def run_dev():
 def build_release():
     """リリースビルド (cargo build --release)"""
     subprocess.run(["cargo", "build", "--release"], cwd=SERVER_DIR)
+    _copy_to_download()
 
 
 def run_release():
-    """リリースビルドの実行ファイルを起動"""
-    exe = SERVER_DIR / "target" / "release" / "kasugai_box.exe"
+    """ダウンロードディレクトリの実行ファイルを起動"""
+    exe = DOWNLOAD_EXE
     if not exe.exists():
         print(f"リリース実行ファイルが見つかりません: {exe}", file=sys.stderr)
         print("先に 'python run.py -B' または 'cargo build --release' を実行してください。", file=sys.stderr)
         sys.exit(1)
-    subprocess.run([str(exe)], cwd=SERVER_DIR)
+    subprocess.run([str(exe)], cwd=ROOT)
 
 
 def main():
@@ -37,12 +52,12 @@ def main():
         "-B",
         "--build",
         action="store_true",
-        help="リリースビルドを実行 (cargo build --release)",
+        help="リリースビルドを実行 (cargo build --release) し download/ にコピー",
     )
     group.add_argument(
         "--release",
         action="store_true",
-        help="リリース実行ファイルを起動（未指定時は cargo run）",
+        help="download/kasugai_box.exe を起動（未指定時は cargo run）",
     )
     args = parser.parse_args()
 

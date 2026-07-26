@@ -12,7 +12,7 @@ KASUGAI 本体は `http://127.0.0.1:8410/ui` を WebView のペイン/タブで�
 
 | 種別 | 入手先 | 備考 |
 | :--- | :--- | :--- |
-| リリースビルド済みバイナリ | [GitHub Releases](https://github.com/yamamoto-ryuzo/kasugai_box/releases) | Windows 用 `kasugai_box.exe` |
+| リリースビルド済みバイナリ | [download/kasugai_box.exe](./download/kasugai_box.exe) | `python run.py -B` でビルド・配置されます |
 | ソースコード | [GitHub リポジトリ](https://github.com/yamamoto-ryuzo/kasugai_box) | `cargo build --release` でビルド可能 |
 
 ---

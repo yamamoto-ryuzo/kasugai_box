@@ -2,6 +2,10 @@
 
 KASUGAI 用 API サイドカー。Box フォルダ内画像の EXIF 抽出（CSV/GeoJSON 出力）、Box API チャット、Box OAuth ログインを HTTP/REST + MCP で提供します。
 
+## ダウンロード
+
+- **[download/kasugai_box.exe](./download/kasugai_box.exe)** — `python run.py -B` でビルド・配置されます
+
 ## ドキュメント（GitHub Pages）
 
 詳細なドキュメントは **GitHub Pages** で確認してください。
