@@ -4,21 +4,22 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Box Photo Geo URL</title>
+    <title>kasugai_box</title>
     <script type="module" src="/main.js" defer></script>
   </head>
 
   <body>
     <main class="container">
-      <h1>Box Photo Geo URL</h1>
-      <p>Boxフォルダ内の画像からEXIFの位置情報を抽出し、CSV・GeoJSONを出力します。</p>
+      <h1>kasugai_box</h1>
 
       <div class="tabs">
         <button class="tab-btn active" data-tab="photo">Photo</button>
+        <button class="tab-btn" data-tab="mcp">MCP</button>
         <button class="tab-btn" data-tab="settings">設定</button>
       </div>
 
       <section id="tab-photo" class="tab-panel active">
+        <p>Boxフォルダ内の画像からEXIFの位置情報を抽出し、CSV・GeoJSONを出力します。</p>
         <div class="form">
           <label>
             フォルダURL
@@ -47,29 +48,43 @@
         </table>
       </section>
 
+      <section id="tab-mcp" class="tab-panel">
+        <div class="chat-container" id="chat-container">
+          <div class="chat-messages" id="chat-messages"></div>
+          <div class="chat-input-row">
+            <input type="text" id="chat-input" placeholder="メッセージを入力（例: help, me, folder 0）" />
+            <button id="chat-send" type="button">送信</button>
+          </div>
+        </div>
+      </section>
+
       <section id="tab-settings" class="tab-panel">
         <div class="form">
           <label>
             クライアントID
-            <input type="text" id="client-id" placeholder="Box Client ID" />
+            <input type="text" id="mcp-client-id" placeholder="Box Client ID" />
           </label>
           <label>
             クライアントシークレット
-            <input type="password" id="client-secret" placeholder="Box Client Secret" />
+            <input type="password" id="mcp-client-secret" placeholder="Box Client Secret" />
           </label>
           <label>
             Box Subject Type
-            <select id="box-subject-type">
+            <select id="mcp-box-subject-type">
               <option value="enterprise">enterprise</option>
               <option value="user">user</option>
             </select>
           </label>
           <label>
             Box Subject ID
-            <input type="text" id="box-subject-id" placeholder="Enterprise ID または User ID" />
+            <input type="text" id="mcp-box-subject-id" placeholder="Enterprise ID または User ID" />
           </label>
+          <button id="mcp-save-settings" type="button">保存</button>
+          <div id="mcp-settings-status"></div>
         </div>
       </section>
+
+
     </main>
   </body>
 </html>

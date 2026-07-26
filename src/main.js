@@ -4,11 +4,28 @@ const $ = (id) => document.getElementById(id);
 
 async function loadSavedConfig() {
   const config = await invoke("load_saved_config");
-  $("client-id").value = config.clientId || "";
-  $("client-secret").value = config.clientSecret || "";
-  $("box-subject-type").value = config.boxSubjectType || "enterprise";
-  $("box-subject-id").value = config.boxSubjectId || "";
   $("folder-url").value = config.folderUrl || "";
+  $("mcp-client-id").value = config.clientId || "";
+  $("mcp-client-secret").value = config.clientSecret || "";
+  $("mcp-box-subject-type").value = config.boxSubjectType || "enterprise";
+  $("mcp-box-subject-id").value = config.boxSubjectId || "";
+}
+
+async function saveMcpSettings() {
+  const config = {
+    clientId: $("mcp-client-id").value.trim(),
+    clientSecret: $("mcp-client-secret").value.trim(),
+    boxSubjectType: $("mcp-box-subject-type").value.trim(),
+    boxSubjectId: $("mcp-box-subject-id").value.trim(),
+    folderUrl: $("folder-url")?.value.trim() || "",
+  };
+  try {
+    await invoke("save_config_cmd", { config });
+    $("mcp-settings-status").textContent = "保存しました";
+    loadSavedConfig();
+  } catch (err) {
+    $("mcp-settings-status").textContent = `エラー: ${err}`;
+  }
 }
 
 function renderRecords(records) {
@@ -44,10 +61,10 @@ function escapeHtml(text) {
 }
 
 async function run() {
-  const clientId = $("client-id").value.trim();
-  const clientSecret = $("client-secret").value.trim();
-  const boxSubjectType = $("box-subject-type").value.trim();
-  const boxSubjectId = $("box-subject-id").value.trim();
+  const clientId = $("mcp-client-id").value.trim();
+  const clientSecret = $("mcp-client-secret").value.trim();
+  const boxSubjectType = $("mcp-box-subject-type").value.trim();
+  const boxSubjectId = $("mcp-box-subject-id").value.trim();
   const folderUrl = $("folder-url").value.trim();
   const outputDir = $("output-dir").value.trim() || "box_photo_geo_url/output";
 
@@ -100,8 +117,40 @@ function initTabs() {
   }
 }
 
+async function sendChat() {
+  const input = $("chat-input");
+  const text = input.value.trim();
+  if (!text) return;
+  addChatMessage("user", text);
+  input.value = "";
+
+  try {
+    const response = await invoke("mcp_chat", { text });
+    addChatMessage("assistant", response.reply);
+  } catch (err) {
+    addChatMessage("assistant", `エラー: ${err}`);
+  }
+}
+
+function addChatMessage(role, text) {
+  const container = $("chat-messages");
+  const row = document.createElement("div");
+  row.className = `chat-message ${role}`;
+  const bubble = document.createElement("div");
+  bubble.className = "chat-bubble";
+  bubble.textContent = text;
+  row.appendChild(bubble);
+  container.appendChild(row);
+  container.scrollTop = container.scrollHeight;
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   loadSavedConfig();
   initTabs();
   $("run-btn").addEventListener("click", run);
+  $("chat-send").addEventListener("click", sendChat);
+  $("chat-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendChat();
+  });
+  $("mcp-save-settings")?.addEventListener("click", saveMcpSettings);
 });

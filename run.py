@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Box Photo Geo URL (Tauri) ランチャー"""
+"""kasugai_box (Tauri) ランチャー"""
 import argparse
 import subprocess
 import sys
@@ -31,7 +31,7 @@ def run_release():
     subprocess.run([str(exe)], cwd=ROOT)
 
 def main():
-    parser = argparse.ArgumentParser(description="Box Photo Geo URL ランチャー")
+    parser = argparse.ArgumentParser(description="kasugai_box ランチャー")
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "-b",

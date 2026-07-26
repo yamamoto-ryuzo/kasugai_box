@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Box Photo Geo URL",
+  "productName": "kasugai_box",
   "version": "0.1.0",
   "identifier": "com.ryu.boxphotogeourl",
   "build": {
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Box Photo Geo URL",
+        "title": "kasugai_box",
         "width": 1000,
         "height": 700
       }

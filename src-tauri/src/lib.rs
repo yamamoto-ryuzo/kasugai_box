@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use exif::{In, Reader, Tag, Value};
+use keyring::Entry;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use regex::Regex;
@@ -50,6 +51,18 @@ struct BoxTokenResponse {
     expires_in: Option<u64>,
 }
 
+#[derive(Deserialize, Debug)]
+struct BoxUser {
+    name: String,
+    login: String,
+    r#type: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct BoxSearchResponse {
+    entries: Vec<BoxItem>,
+}
+
 async fn get_box_access_token(
     client_id: &str,
     client_secret: &str,
@@ -88,27 +101,23 @@ pub struct ProcessResult {
     pub message: String,
 }
 
-fn app_config_path() -> PathBuf {
-    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    base.join("box_photo_geo_url_rs/config.json")
-}
+const KEYRING_SERVICE: &str = "kasugai_box";
+const KEYRING_ACCOUNT: &str = "kasugai_box_config";
 
 fn load_config() -> Config {
-    let path = app_config_path();
-    if let Ok(content) = fs::read_to_string(&path) {
-        serde_json::from_str(&content).unwrap_or_default()
-    } else {
-        Config::default()
+    match Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT) {
+        Ok(entry) => match entry.get_password() {
+            Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+            Err(_) => Config::default(),
+        },
+        Err(_) => Config::default(),
     }
 }
 
 fn save_config(config: &Config) -> Result<()> {
-    let path = app_config_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
+    let entry = Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)?;
     let content = serde_json::to_string_pretty(config)?;
-    fs::write(&path, content)?;
+    entry.set_password(&content)?;
     Ok(())
 }
 
@@ -377,6 +386,107 @@ fn save_config_cmd(config: Config) -> Result<(), String> {
     save_config(&config).map_err(|e| e.to_string())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpChatResponse {
+    pub reply: String,
+}
+
+async fn box_api_get(token: &str, url: &str) -> Result<String> {
+    let client = Client::builder()
+        .default_headers({
+            let mut h = header::HeaderMap::new();
+            h.insert(
+                header::AUTHORIZATION,
+                header::HeaderValue::from_str(&format!("Bearer {}", token))?,
+            );
+            h
+        })
+        .build()?;
+    let resp = client.get(url).send().await?;
+    let status = resp.status();
+    let text = resp.text().await?;
+    if !status.is_success() {
+        return Err(anyhow::anyhow!("Box API error {}: {}", status, text));
+    }
+    Ok(text)
+}
+
+async fn run_mcp_chat(text: String) -> Result<McpChatResponse> {
+    let config = load_config();
+    let client_id = config.client_id.context("クライアントIDが設定されていません")?;
+    let client_secret = config.client_secret.context("クライアントシークレットが設定されていません")?;
+    let subject_type = config.box_subject_type.context("Subject Typeが設定されていません")?;
+    let subject_id = config.box_subject_id.context("Subject IDが設定されていません")?;
+
+    let token = get_box_access_token(&client_id, &client_secret, &subject_type, &subject_id).await?;
+    let parts: Vec<&str> = text.trim().splitn(2, ' ').collect();
+    let cmd = parts.first().copied().unwrap_or("").to_lowercase();
+    let arg = parts.get(1).copied().unwrap_or("").trim();
+
+    let reply = match cmd.as_str() {
+        "help" | "?" | "" => {
+            "利用可能なコマンド:\n".to_string()
+                + "  help        このヘルプを表示\n"
+                + "  me          ログインユーザー情報を表示\n"
+                + "  folder <id> フォルダ内のアイテムを一覧\n"
+                + "  search <q>  ファイルを検索"
+        }
+        "me" | "user" => {
+            let body = box_api_get(&token, "https://api.box.com/2.0/users/me").await?;
+            let user: BoxUser = serde_json::from_str(&body)?;
+            format!("ユーザー: {} ({} / {})", user.name, user.login, user.r#type)
+        }
+        "folder" => {
+            let id = if arg.is_empty() { "0".to_string() } else { arg.to_string() };
+            let url = format!(
+                "https://api.box.com/2.0/folders/{}/items?limit=20&fields=type,id,name",
+                id
+            );
+            let body = box_api_get(&token, &url).await?;
+            let data: BoxFolderItems = serde_json::from_str(&body)?;
+            if data.entries.is_empty() {
+                "アイテムが見つかりませんでした。".to_string()
+            } else {
+                data.entries
+                    .iter()
+                    .map(|i| format!("[{}] {} ({})", i.r#type, i.name, i.id))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        }
+        "search" => {
+            if arg.is_empty() {
+                "検索語を入力してください。".to_string()
+            } else {
+                let url = format!(
+                    "https://api.box.com/2.0/search?query={}&limit=20&fields=type,id,name",
+                    arg
+                );
+                let body = box_api_get(&token, &url).await?;
+                let data: BoxSearchResponse = serde_json::from_str(&body)?;
+                if data.entries.is_empty() {
+                    "検索結果が見つかりませんでした。".to_string()
+                } else {
+                    data.entries
+                        .iter()
+                        .map(|i| format!("[{}] {} ({})", i.r#type, i.name, i.id))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                }
+            }
+        }
+        _ => "不明なコマンドです。'help' で使い方を確認できます。".to_string(),
+    };
+
+    Ok(McpChatResponse { reply })
+}
+
+#[tauri::command]
+async fn mcp_chat(text: String) -> Result<McpChatResponse, String> {
+    run_mcp_chat(text).await.map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn process_photos(
     client_id: String,
@@ -404,7 +514,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             load_saved_config,
             save_config_cmd,
-            process_photos
+            process_photos,
+            mcp_chat
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

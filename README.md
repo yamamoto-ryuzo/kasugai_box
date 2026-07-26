@@ -1,4 +1,4 @@
-# Box Photo Geo URL
+# kasugai_box
 
 Boxのフォルダ内の画像ファイルを取得し、EXIF情報から緯度経度・撮影日を抽出し、共有リンク付きで一覧化・GeoJSON/CSV出力する **Tauri + Rust** デスクトップアプリです。
 
@@ -11,7 +11,8 @@ Boxのフォルダ内の画像ファイルを取得し、EXIF情報から緯度�
 - 画像ごとにBoxの共有リンク（Web URL）を付与
 - 結果をCSVおよびGeoJSON（QGIS対応）で出力
 - QGISで「url」列を使ってアクションやHTMLポップアップで写真表示が可能
-- 設定（クライアントID・クライアントシークレット・Subject Type/ID・フォルダURL）は自動保存
+- MCP タブで Box に関する簡単な情報をチャット形式で取得
+- 認証情報は OS の資格情報保護（Keyring）に保存
 
 ---
 
@@ -21,15 +22,16 @@ Boxのフォルダ内の画像ファイルを取得し、EXIF情報から緯度�
 
 `src-tauri/target/release/bundle/` に MSI インストーラーまたは NSIS インストーラーが生成されています。好きな方を使ってインストールしてください。
 
-- `Box Photo Geo URL_*.msi`
-- `Box Photo Geo URL_*-setup.exe`
+- `kasugai_box_*.msi`
+- `kasugai_box_*-setup.exe`
 
 ### 2. 使い方
 
 1. アプリを起動します。
-2. 画面に従って Box の `クライアントID`・`クライアントシークレット`・`Box Subject Type`（`enterprise` または `user`）・`Box Subject ID`・`対象フォルダURL` を入力してください。
-3. `実行` ボタンを押すと、指定フォルダ以下の画像ファイルを再帰的に取得し、EXIF情報から位置情報・撮影日を抽出します。
-4. 処理が完了すると、CSVとGeoJSONが出力されます。デフォルトでは `ドキュメント/box_photo_geo_url/output/` に保存されます。
+2. 「設定」タブで Box の `クライアントID`・`クライアントシークレット`・`Box Subject Type`（`enterprise` または `user`）・`Box Subject ID` を入力し「保存」を押してください。認証情報は OS の Keyring に保存されます。
+3. 「Photo」タブで `対象フォルダURL` と `出力フォルダ名` を入力し、`実行` ボタンを押すと、指定フォルダ以下の画像ファイルを再帰的に取得し、EXIF情報から位置情報・撮影日を抽出します。
+4. 「MCP」タブではチャット形式で Box の簡易情報（ユーザー、フォルダ内容、検索など）を取得できます。
+5. 処理が完了すると、CSVとGeoJSONが出力されます。デフォルトでは `ドキュメント/box_photo_geo_url/output/` に保存されます。
 
 ### 3. 出力ファイル
 
@@ -57,7 +59,7 @@ Boxのフォルダ内の画像ファイルを取得し、EXIF情報から緯度�
 cargo tauri dev
 
 # または Python ランチャーから
-cd C:\devin\boxPhotoGeoURL
+cd C:\devin\kasugai_box
 python run.py
 
 # リリースビルド

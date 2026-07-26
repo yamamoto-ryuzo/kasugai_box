@@ -1,7 +1,7 @@
 [package]
 name = "box_photo_geo_url_rs"
 version = "0.1.0"
-description = "Box Photo Geo URL Tauri App"
+description = "kasugai_box Tauri App"
 authors = ["you"]
 edition = "2021"
 
@@ -24,3 +24,4 @@ kamadak-exif = "0.5"
 futures = "0.3"
 dirs = "5.0"
 anyhow = "1.0.104"
+keyring = "4.1.5"
