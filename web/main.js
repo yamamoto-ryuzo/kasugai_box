@@ -37,7 +37,33 @@ async function loadSavedConfig() {
   } catch (err) {
     $("settings-status").textContent = `設定取得エラー: ${err.message}`;
   }
+  loadServerStatus();
   updateOauthStatus();
+}
+
+async function loadServerStatus() {
+  try {
+    const status = await apiGet("/api/v1/server/status");
+    $("server-port").textContent = status.port ?? "-";
+    $("server-status-text").textContent = "実行中";
+  } catch (err) {
+    $("server-port").textContent = "-";
+    $("server-status-text").textContent = `状態取得エラー: ${err.message}`;
+  }
+}
+
+async function stopServer() {
+  if (!confirm("kasugai_box を停止しますか？KASUGAI 本体からの再起動が必要になります。")) {
+    return;
+  }
+  $("server-status-text").textContent = "停止しています...";
+  try {
+    await apiPost("/api/v1/server/stop");
+    $("server-status-text").textContent = "停止しました。このタブを閉じてください。";
+    $("server-stop").disabled = true;
+  } catch (err) {
+    $("server-status-text").textContent = `停止エラー: ${err.message}`;
+  }
 }
 
 async function saveSettings() {
@@ -307,4 +333,5 @@ window.addEventListener("DOMContentLoaded", () => {
   $("box-oauth-logout")?.addEventListener("click", logoutBoxOAuth);
   $("mcp-list-tools")?.addEventListener("click", listMcpTools);
   $("mcp-call-tool")?.addEventListener("click", callMcpTool);
+  $("server-stop")?.addEventListener("click", stopServer);
 });

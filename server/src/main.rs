@@ -16,6 +16,7 @@ use serde::Deserialize;
 use serde_json::json;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use tokio::sync::Notify;
 use tower_http::cors::CorsLayer;
 
 use crate::box_api::ensure_access_token;
@@ -24,6 +25,8 @@ use crate::jobs::Jobs;
 
 pub struct AppState {
     pub jobs: Jobs,
+    pub port: u16,
+    pub shutdown: Arc<Notify>,
 }
 
 const DEFAULT_PORT: u16 = 8410;
@@ -237,6 +240,20 @@ async fn serve_openapi() -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "application/yaml; charset=utf-8")], OPENAPI_YAML)
 }
 
+async fn server_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    Json(json!({
+        "running": true,
+        "port": state.port,
+        "bind": "127.0.0.1"
+    }))
+}
+
+async fn server_stop(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    // レスポンスを確実に返した上で graceful shutdown を開始する
+    state.shutdown.notify_one();
+    Json(json!({ "message": "kasugai_box を停止します" }))
+}
+
 #[tokio::main]
 async fn main() {
     let port = std::env::var("KASUGAI_BOX_PORT")
@@ -244,7 +261,12 @@ async fn main() {
         .and_then(|v| v.parse::<u16>().ok())
         .unwrap_or(DEFAULT_PORT);
 
-    let state = Arc::new(AppState { jobs: Jobs::default() });
+    let shutdown = Arc::new(Notify::new());
+    let state = Arc::new(AppState {
+        jobs: Jobs::default(),
+        port,
+        shutdown: shutdown.clone(),
+    });
 
     // KASUGAI 本体（Tauri WebView）から直接 API を呼ぶ場合のための CORS 許可（方針書 1.5）
     let cors = CorsLayer::new()
@@ -272,6 +294,8 @@ async fn main() {
         .route("/api/v1/box/chat", post(box_chat))
         .route("/api/v1/mcp-client/tools", get(mcp_client_list_tools))
         .route("/api/v1/mcp-client/call", post(mcp_client_call_tool))
+        .route("/api/v1/server/status", get(server_status))
+        .route("/api/v1/server/stop", post(server_stop))
         .route("/mcp", post(mcp_server::handle))
         .layer(cors)
         .with_state(state);
@@ -291,5 +315,11 @@ async fn main() {
         env!("CARGO_PKG_VERSION"),
         port
     );
-    axum::serve(listener, app).await.expect("server error");
+    let server = axum::serve(listener, app).with_graceful_shutdown(async move {
+        shutdown.notified().await;
+    });
+    if let Err(e) = server.await {
+        eprintln!("server error: {}", e);
+    }
+    println!("kasugai_box を停止しました");
 }

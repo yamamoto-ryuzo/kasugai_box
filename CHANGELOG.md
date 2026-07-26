@@ -16,6 +16,7 @@
 - MCP ツール：`box_whoami`, `box_search`, `box_list_folder`, `box_create_shared_link`, `photos_process`, `job_status`
 - `KASUGAI_BOX_PORT` 環境変数でポートを変更可能（既定 `8410`）
 - 同一オリジン UI 用 fetch API への移行（`window.__TAURI__.core.invoke` を廃止）
+- `GET/POST /api/v1/server/status|stop` で現在ポート表示と graceful shutdown 停止ボタンを UI に追加
 
 ### Changed
 - Tauri v2 デスクトップアプリ構成を廃止し、独立した API サイドカーとして再構成

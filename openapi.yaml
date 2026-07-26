@@ -239,6 +239,34 @@ paths:
                 type: object
                 properties:
                   result: { type: string }
+  /api/v1/server/status:
+    get:
+      summary: サイドカー実行状態とポート取得
+      operationId: getServerStatus
+      responses:
+        "200":
+          description: 実行状態
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  running: { type: boolean }
+                  port: { type: integer }
+                  bind: { type: string }
+  /api/v1/server/stop:
+    post:
+      summary: サイドカーを停止
+      description: >-
+        レスポンスを返した後、プロセスを終了します。KASUGAI 本体または手動で再起動してください。
+      operationId: stopServer
+      responses:
+        "200":
+          description: 停止メッセージ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
   /mcp:
     post:
       summary: kasugai_box 自身の MCP サーバー（JSON-RPC 2.0 / Streamable HTTP）
