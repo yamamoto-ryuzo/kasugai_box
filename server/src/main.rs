@@ -8,7 +8,7 @@ mod photos;
 
 use anyhow::Result;
 use axum::extract::{Path, State};
-use axum::http::{header, HeaderValue, Method, StatusCode};
+use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -17,7 +17,6 @@ use serde_json::json;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::sync::Notify;
-use tower_http::cors::CorsLayer;
 
 use crate::box_api::ensure_access_token;
 use crate::config::{apply_update, load_config, save_config, ConfigUpdate, ConfigView, DEFAULT_PORT};
@@ -171,7 +170,7 @@ async fn photos_process(
     let output_dir = req
         .output_dir
         .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| "box_photo_geo_url/output".to_string());
+        .unwrap_or_else(|| "c:/kasugai/box/photo".to_string());
     let job_id = start_photos_job(state, req.folder_url.trim().to_string(), output_dir).await?;
     Ok((
         StatusCode::ACCEPTED,
@@ -268,15 +267,6 @@ async fn main() {
         shutdown: shutdown.clone(),
     });
 
-    // KASUGAI 本体（Tauri WebView）から直接 API を呼ぶ場合のための CORS 許可（方針書 1.5）
-    let cors = CorsLayer::new()
-        .allow_origin([
-            HeaderValue::from_static("http://tauri.localhost"),
-            HeaderValue::from_static("https://tauri.localhost"),
-        ])
-        .allow_methods([Method::GET, Method::POST])
-        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
-
     let app = Router::new()
         .route("/", get(|| async { Redirect::to("/ui") }))
         .route("/ui", get(serve_index))
@@ -297,7 +287,6 @@ async fn main() {
         .route("/api/v1/server/status", get(server_status))
         .route("/api/v1/server/stop", post(server_stop))
         .route("/mcp", post(mcp_server::handle))
-        .layer(cors)
         .with_state(state);
 
     // 127.0.0.1 固定（方針書 1.2：0.0.0.0 バインド禁止）

@@ -148,7 +148,7 @@ paths:
               required: [folderUrl]
               properties:
                 folderUrl: { type: string, description: Box フォルダ URL または ID }
-                outputDir: { type: string, description: 出力フォルダ（既定 box_photo_geo_url/output。相対パスはドキュメントフォルダ基準） }
+                outputDir: { type: string, description: 出力フォルダ（既定 c:/kasugai/box/photo。絶対パスまたは相対パス） }
       responses:
         "202":
           description: ジョブ受付

@@ -187,7 +187,7 @@ async function pollJob(jobId) {
 
 async function run() {
   const folderUrl = $("folder-url").value.trim();
-  const outputDir = $("output-dir").value.trim() || "box_photo_geo_url/output";
+  const outputDir = $("output-dir").value.trim() || "c:/kasugai/box/photo";
 
   if (!folderUrl) {
     $("status").textContent = "フォルダURLを入力してください。";

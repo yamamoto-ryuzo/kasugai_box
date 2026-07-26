@@ -4,7 +4,7 @@ config.json
 *.gpkg
 *.gpkg.png
 
-# Node / Tauri
+# Node
 node_modules/
 /dist
 
@@ -12,9 +12,6 @@ node_modules/
 /target/
 /server/target/
 /server/Cargo.lock
-/src-tauri/target/
-/src-tauri/Cargo.lock
-/src-tauri/gen/
 
 # OS / IDE
 .DS_Store

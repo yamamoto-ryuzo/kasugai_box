@@ -84,7 +84,7 @@ fn tools_definition() -> Value {
                 "type": "object",
                 "properties": {
                     "folder_url": { "type": "string", "description": "Box フォルダ URL または ID" },
-                    "output_dir": { "type": "string", "description": "出力フォルダ（既定 box_photo_geo_url/output）" }
+                    "output_dir": { "type": "string", "description": "出力フォルダ（既定 c:/kasugai/box/photo）" }
                 },
                 "required": ["folder_url"]
             }
@@ -163,7 +163,7 @@ async fn call_tool(state: &Arc<AppState>, name: &str, args: &Value) -> Result<St
             let output_dir = args
                 .get("output_dir")
                 .and_then(Value::as_str)
-                .unwrap_or("box_photo_geo_url/output")
+                .unwrap_or("c:/kasugai/box/photo")
                 .to_string();
             let job_id = crate::start_photos_job(state.clone(), folder_url, output_dir)
                 .await
