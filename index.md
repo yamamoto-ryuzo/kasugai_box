@@ -166,6 +166,15 @@ cargo build --release
 
 ---
 
+## ライセンス
+
+- `kasugai_box` 本体: [MIT License](./LICENSE)
+- サードパーティーライブラリのライセンス: [THIRD-PARTY-LICENSES.md](./THIRD-PARTY-LICENSES.md)
+
+依存ライブラリを `cargo-license` で確認した結果、`GPL` / `LGPL` 系の強いコピーレフトは含まれておらず、MIT ライセンスで公開できます。
+
+---
+
 ## 参考
 
 - [KASUGAI 外部連携方針](../kasugai/KASUGAI_INTEGRATION_POLICY.md)

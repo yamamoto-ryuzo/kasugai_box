@@ -40,3 +40,10 @@ python run.py
 ```
 
 既定ポート `8410` で `http://127.0.0.1:8410/ui` が開きます。詳細は上記 GitHub Pages を参照してください。
+
+## ライセンス
+
+- `kasugai_box` 本体: [MIT License](./LICENSE)
+- サードパーティーライブラリのライセンス: [THIRD-PARTY-LICENSES.md](./THIRD-PARTY-LICENSES.md)
+
+依存ライブラリを確認した結果、`GPL` / `LGPL` 系の強いコピーレフトは含まれておらず、MIT ライセンスで公開できます。
