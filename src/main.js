@@ -218,7 +218,7 @@ function addChatMessage(role, text, isHtml = false) {
       const links = bubble.querySelectorAll("a[target='_blank']");
       let copyText;
       if (links.length > 0) {
-        copyText = Array.from(links).map((a) => `${a.textContent}: ${a.href}`).join("\n");
+        copyText = Array.from(links).map((a) => `[${a.textContent}](${a.href})`).join("\n");
       } else {
         copyText = bubble.textContent;
       }
