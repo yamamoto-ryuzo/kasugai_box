@@ -3,6 +3,34 @@
 ## [Unreleased]
 
 ### Added
+- API サイドカー化：axum 製 HTTP サーバーを実装（`server/`）
+- `GET /health` で名前・バージョンを返すヘルスチェック
+- `GET /ui` / `/main.js` / `/styles.css` で UI を同一オリジン配信
+- `GET /openapi.yaml` で OpenAPI 仕様を提供
+- `GET/POST /api/v1/config` で設定取得・更新（UI には平文を渡さない）
+- `POST /api/v1/photos/process` で長時間処理を `202 Accepted` + ジョブ ID で非同期実行
+- `GET /api/v1/jobs/{id}` でジョブ進捗・結果を取得
+- `POST /api/v1/auth/box/login` でシステムブラウザ + `localhost:8000/callback` OAuth ログイン
+- `POST /api/v1/auth/box/developer-token` でデベロッパートークン認証
+- `POST /mcp` で自前の MCP サーバー（Streamable HTTP / JSON-RPC 2.0）を提供
+- MCP ツール：`box_whoami`, `box_search`, `box_list_folder`, `box_create_shared_link`, `photos_process`, `job_status`
+- `KASUGAI_BOX_PORT` 環境変数でポートを変更可能（既定 `8410`）
+- 同一オリジン UI 用 fetch API への移行（`window.__TAURI__.core.invoke` を廃止）
+
+### Changed
+- Tauri v2 デスクトップアプリ構成を廃止し、独立した API サイドカーとして再構成
+- 実行ファイル名を `kasugai_box.exe` に統一（`server/target/release/`）
+- 画像処理ジョブを非同期化し UI 経由でリアルタイム進捗を表示
+- `run.py` を `cargo tauri` から `cargo` ベースの起動・ビルドに変更
+
+### Security
+- API サイドカーは `127.0.0.1` のみでバインドし、`0.0.0.0` バインドを禁止
+- API キー・アクセストークンはサイドカー内 keyring で管理し、UI には平文を渡さない
+- UI には認証情報の保存有無フラグのみ返し、実値は保持しない
+
+## [0.1.0] - 2026-07-26
+
+### Added
 - Box API タブ: 設定タブの Box 認証情報を使ったチャット形式の Box 情報取得機能
 - MCP タブ: 設定した MCP サーバーに対して `tools/list` / `tools/call` を実行する機能
 - OS 資格情報保護（Keyring）による設定保存

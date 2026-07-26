@@ -1,0 +1,330 @@
+openapi: 3.0.3
+info:
+  title: kasugai_box API
+  description: >-
+    KASUGAI 用 API サイドカー。Box フォルダ内画像の EXIF 抽出（CSV/GeoJSON 出力）、
+    Box API チャット、Box OAuth ログインを HTTP/REST で提供します。
+    AI エージェント向けには POST /mcp（Streamable HTTP）で同じ機能をツールとして提供します。
+  version: 0.2.0
+servers:
+  - url: http://127.0.0.1:8410
+    description: ローカルサイドカー（既定ポート。KASUGAI_BOX_PORT で変更可）
+paths:
+  /health:
+    get:
+      summary: ヘルスチェック
+      operationId: getHealth
+      responses:
+        "200":
+          description: サイドカー名とバージョン
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  name: { type: string, example: kasugai_box }
+                  version: { type: string, example: 0.2.0 }
+  /ui:
+    get:
+      summary: UI（KASUGAI のペイン/タブで読み込む HTML）
+      operationId: getUi
+      responses:
+        "200":
+          description: HTML
+          content:
+            text/html: {}
+  /openapi.yaml:
+    get:
+      summary: この OpenAPI 仕様
+      operationId: getOpenapi
+      responses:
+        "200":
+          description: OpenAPI YAML
+  /api/v1/config:
+    get:
+      summary: 設定取得（機密情報は保存有無フラグのみ返す）
+      operationId: getConfig
+      responses:
+        "200":
+          description: 設定ビュー
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigView"
+    post:
+      summary: 設定更新（機密項目は空でない値が来たときだけ上書き）
+      operationId: postConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigUpdate"
+      responses:
+        "200":
+          description: 更新後の設定ビュー
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigView"
+  /api/v1/auth/box/login:
+    post:
+      summary: Box OAuth ログイン（システムブラウザを開き、localhost:8000/callback で認可コードを受信）
+      operationId: boxOauthLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                clientId: { type: string, nullable: true }
+                clientSecret: { type: string, nullable: true }
+      responses:
+        "200":
+          description: ログイン成功メッセージ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "500":
+          $ref: "#/components/responses/Error"
+  /api/v1/auth/box/developer-token:
+    post:
+      summary: デベロッパートークンでログイン
+      operationId: developerTokenLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: ログイン成功メッセージ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /api/v1/auth/box/status:
+    get:
+      summary: ログイン状態取得
+      operationId: authStatus
+      responses:
+        "200":
+          description: ログイン状態
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loggedIn: { type: boolean }
+                  expiresAt: { type: integer, nullable: true, description: UNIX 秒 }
+  /api/v1/auth/box/logout:
+    post:
+      summary: ログアウト（保存済みトークンを破棄）
+      operationId: authLogout
+      responses:
+        "200":
+          description: 完了メッセージ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /api/v1/photos/process:
+    post:
+      summary: Box フォルダ内画像の EXIF 抽出ジョブを開始（長時間処理）
+      operationId: photosProcess
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [folderUrl]
+              properties:
+                folderUrl: { type: string, description: Box フォルダ URL または ID }
+                outputDir: { type: string, description: 出力フォルダ（既定 box_photo_geo_url/output。相対パスはドキュメントフォルダ基準） }
+      responses:
+        "202":
+          description: ジョブ受付
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId: { type: string }
+                  status: { type: string, example: queued }
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/jobs/{id}:
+    get:
+      summary: ジョブの進捗・結果を取得
+      operationId: getJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ジョブ状態
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobInfo"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/box/chat:
+    post:
+      summary: Box API チャット（help / me / folder / search / more / link）
+      operationId: boxChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string }
+                searchLimit: { type: integer, minimum: 1, maximum: 200 }
+      responses:
+        "200":
+          description: チャット応答
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reply: { type: string, description: HTML を含むことがある }
+                  hasMore: { type: boolean }
+  /api/v1/mcp-client/tools:
+    get:
+      summary: 設定済みの外部 MCP サーバーからツール一覧を取得
+      operationId: mcpClientListTools
+      responses:
+        "200":
+          description: tools/list の結果（整形済み JSON 文字列）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result: { type: string }
+  /api/v1/mcp-client/call:
+    post:
+      summary: 設定済みの外部 MCP サーバーのツールを実行
+      operationId: mcpClientCallTool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                arguments: { type: string, description: 引数 JSON 文字列 }
+      responses:
+        "200":
+          description: tools/call の結果（整形済み JSON 文字列）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result: { type: string }
+  /mcp:
+    post:
+      summary: kasugai_box 自身の MCP サーバー（JSON-RPC 2.0 / Streamable HTTP）
+      description: >-
+        initialize / tools/list / tools/call / ping に対応。
+        公開ツール: box_whoami, box_search, box_list_folder, box_create_shared_link,
+        photos_process（ジョブ開始）, job_status。
+      operationId: mcp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: JSON-RPC 2.0 リクエスト
+      responses:
+        "200":
+          description: JSON-RPC 2.0 レスポンス
+        "202":
+          description: 通知（id なし）の受理
+components:
+  responses:
+    Error:
+      description: エラー
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        detail: { type: string, nullable: true }
+    Message:
+      type: object
+      properties:
+        message: { type: string }
+    ConfigView:
+      type: object
+      properties:
+        folderUrl: { type: string, nullable: true }
+        mcpServerUrl: { type: string, nullable: true }
+        searchLimit: { type: integer, nullable: true }
+        hasClientId: { type: boolean }
+        hasClientSecret: { type: boolean }
+        hasDeveloperToken: { type: boolean }
+        hasMcpConnectionToken: { type: boolean }
+    ConfigUpdate:
+      type: object
+      description: 機密項目（clientId 等）は空でない値が来たときだけ上書きされる
+      properties:
+        clientId: { type: string, nullable: true }
+        clientSecret: { type: string, nullable: true }
+        developerToken: { type: string, nullable: true }
+        folderUrl: { type: string, nullable: true }
+        mcpServerUrl: { type: string, nullable: true }
+        mcpConnectionToken: { type: string, nullable: true }
+        searchLimit: { type: integer, nullable: true }
+    JobInfo:
+      type: object
+      properties:
+        jobId: { type: string }
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        result:
+          $ref: "#/components/schemas/ProcessResult"
+        error: { type: string, nullable: true }
+    ProcessResult:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/PhotoRecord"
+        csvPath: { type: string }
+        geojsonPath: { type: string, nullable: true }
+        message: { type: string }
+    PhotoRecord:
+      type: object
+      properties:
+        name: { type: string }
+        fullName: { type: string }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        dateTaken: { type: string, nullable: true }
+        url: { type: string }

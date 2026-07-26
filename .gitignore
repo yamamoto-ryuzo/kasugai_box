@@ -7,6 +7,11 @@ config.json
 # Node / Tauri
 node_modules/
 /dist
+
+# Rust / cargo
+/target/
+/server/target/
+/server/Cargo.lock
 /src-tauri/target/
 /src-tauri/Cargo.lock
 /src-tauri/gen/
