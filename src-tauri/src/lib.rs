@@ -27,6 +27,8 @@ pub struct Config {
     pub expires_at: Option<i64>,
     pub mcp_server_url: Option<String>,
     pub mcp_connection_token: Option<String>,
+    #[serde(default)]
+    pub search_limit: Option<usize>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -495,6 +497,7 @@ fn save_config_cmd(config: Config) -> Result<(), String> {
     existing.expires_at = config.expires_at.or(existing.expires_at);
     existing.mcp_server_url = config.mcp_server_url.or(existing.mcp_server_url);
     existing.mcp_connection_token = config.mcp_connection_token.or(existing.mcp_connection_token);
+    existing.search_limit = config.search_limit.or(existing.search_limit);
     save_config(&existing).map_err(|e| e.to_string())
 }
 
@@ -553,11 +556,13 @@ async fn box_api_put(token: &str, url: &str, body: &str) -> Result<String> {
 struct SearchState {
     query: String,
     next_offset: usize,
+    limit: usize,
 }
 
 struct SearchResult {
     reply: String,
     offset: usize,
+    display_end: usize,
     next_offset: usize,
     total_count: usize,
     has_more: bool,
@@ -572,12 +577,12 @@ fn escape_html(text: &str) -> String {
         .replace('"', "&quot;")
 }
 
-async fn search_box(token: &str, query: &str, offset: usize) -> Result<SearchResult> {
+async fn search_box(token: &str, query: &str, offset: usize, limit: usize) -> Result<SearchResult> {
     let mut url = reqwest::Url::parse("https://api.box.com/2.0/search")?;
     {
         let mut pairs = url.query_pairs_mut();
         pairs.append_pair("query", query);
-        pairs.append_pair("limit", "50");
+        pairs.append_pair("limit", &limit.to_string());
         pairs.append_pair("offset", &offset.to_string());
         pairs.append_pair("fields", "type,id,name,path_collection,shared_link");
     }
@@ -585,7 +590,8 @@ async fn search_box(token: &str, query: &str, offset: usize) -> Result<SearchRes
     let data: BoxSearchResponse = serde_json::from_str(&body)?;
     let response_offset = data.offset.unwrap_or(offset);
     let total_count = data.total_count.unwrap_or(0);
-    let next_offset = response_offset + data.entries.len();
+    let display_end = std::cmp::min(response_offset + data.entries.len(), total_count);
+    let next_offset = response_offset + limit;
     let has_more = next_offset < total_count;
     let reply = if data.entries.is_empty() {
         "検索結果が見つかりませんでした。".to_string()
@@ -625,15 +631,17 @@ async fn search_box(token: &str, query: &str, offset: usize) -> Result<SearchRes
     Ok(SearchResult {
         reply,
         offset: response_offset,
+        display_end,
         next_offset,
         total_count,
         has_more,
     })
 }
 
-async fn run_box_api_chat(text: String) -> Result<BoxApiChatResponse> {
+async fn run_box_api_chat(text: String, search_limit: Option<usize>) -> Result<BoxApiChatResponse> {
     let mut config = load_config();
     let token = ensure_access_token(&mut config).await?;
+    let limit = search_limit.or(config.search_limit).unwrap_or(100);
     let parts: Vec<&str> = text.trim().splitn(2, ' ').collect();
     let cmd = parts.first().copied().unwrap_or("").to_lowercase();
     let arg = parts.get(1).copied().unwrap_or("").trim();
@@ -651,7 +659,7 @@ async fn run_box_api_chat(text: String) -> Result<BoxApiChatResponse> {
                 + "  search <q>  Box標準検索（ファイル名・メタデータ・文書内テキスト）\n"
                 + "  link <type> <id> ファイルまたはフォルダの共有リンクを作成\n"
                 + "  ルール: コマンドと引数は半角スペースで区切ってください。全角スペースは検索語の一部になります。\n"
-                + "  検索結果は 50 件ずつ取得し、Enter で次の 50 件を読み込みます。";
+                + "  検索結果は 100 件ずつ取得し、Enter で次の 100 件を読み込みます。（設定で 1〜200 件に変更可）";
         }
         "me" | "user" => {
             let body = box_api_get(&token, "https://api.box.com/2.0/users/me").await?;
@@ -680,11 +688,11 @@ async fn run_box_api_chat(text: String) -> Result<BoxApiChatResponse> {
             if arg.is_empty() {
                 reply = "検索語を入力してください。".to_string();
             } else {
-                let result = search_box(&token, arg, 0).await?;
+                let result = search_box(&token, arg, 0, limit).await?;
                 let footer = format!(
                     "{}-{}/{} 件{}",
                     result.offset + 1,
-                    result.next_offset,
+                    result.display_end,
                     result.total_count,
                     if result.has_more { "（Enter で続き）" } else { "（すべて表示）" }
                 );
@@ -693,17 +701,18 @@ async fn run_box_api_chat(text: String) -> Result<BoxApiChatResponse> {
                 next_state = Some(SearchState {
                     query: arg.to_string(),
                     next_offset: result.next_offset,
+                    limit,
                 });
             }
         }
         "more" => {
             let last = LAST_SEARCH.lock().unwrap().clone();
             if let Some(state) = last {
-                let result = search_box(&token, &state.query, state.next_offset).await?;
+                let result = search_box(&token, &state.query, state.next_offset, state.limit).await?;
                 let footer = format!(
                     "{}-{}/{} 件{}",
                     result.offset + 1,
-                    result.next_offset,
+                    result.display_end,
                     result.total_count,
                     if result.has_more { "（Enter で続き）" } else { "（すべて表示）" }
                 );
@@ -712,6 +721,7 @@ async fn run_box_api_chat(text: String) -> Result<BoxApiChatResponse> {
                 next_state = Some(SearchState {
                     query: state.query,
                     next_offset: result.next_offset,
+                    limit: state.limit,
                 });
             } else {
                 reply = "先に search を実行してください。".to_string();
@@ -740,11 +750,11 @@ async fn run_box_api_chat(text: String) -> Result<BoxApiChatResponse> {
             if query.is_empty() {
                 reply = "検索語を入力してください。".to_string();
             } else {
-                let result = search_box(&token, query, 0).await?;
+                let result = search_box(&token, query, 0, limit).await?;
                 let footer = format!(
                     "{}-{}/{} 件{}",
                     result.offset + 1,
-                    result.next_offset,
+                    result.display_end,
                     result.total_count,
                     if result.has_more { "（Enter で続き）" } else { "（すべて表示）" }
                 );
@@ -753,6 +763,7 @@ async fn run_box_api_chat(text: String) -> Result<BoxApiChatResponse> {
                 next_state = Some(SearchState {
                     query: query.to_string(),
                     next_offset: result.next_offset,
+                    limit,
                 });
             }
         }
@@ -766,8 +777,8 @@ async fn run_box_api_chat(text: String) -> Result<BoxApiChatResponse> {
 }
 
 #[tauri::command]
-async fn box_api_chat(text: String) -> Result<BoxApiChatResponse, String> {
-    run_box_api_chat(text).await.map_err(|e| e.to_string())
+async fn box_api_chat(text: String, search_limit: Option<usize>) -> Result<BoxApiChatResponse, String> {
+    run_box_api_chat(text, search_limit).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

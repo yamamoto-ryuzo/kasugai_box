@@ -91,7 +91,7 @@
           <li>全角スペース（　）は検索語の一部として扱われます。</li>
           <li>コマンドなしで単語だけ入力した場合、自動的に <code>search</code> として扱われます。</li>
           <li><code>search</code> は Box 標準検索です。ファイル名・メタデータ・文書内テキストを対象に返します。</li>
-          <li>検索結果は <strong>50 件ずつ</strong>取得し、<strong>Enter</strong> を押すと次の 50 件を読み込みます。</li>
+          <li>検索結果は <strong>100 件ずつ</strong>取得し（設定で 1〜200 件変更可）、<strong>Enter</strong> を押すと次の件数を読み込みます。</li>
           <li>複数単語を空白区切りで入力した場合、デフォルトは <strong>OR</strong> 扱いです。</li>
           <li><code>AND</code> / <code>OR</code> / <code>NOT</code> は大文字で指定してください。</li>
           <li><code>"phrase"</code> のようにダブルクォートで囲むと、フレーズ完全一致検索になります。</li>
@@ -111,6 +111,10 @@
           <label>
             デベロッパートークン（任意・1時間程度で失効）
             <input type="password" id="box-developer-token" placeholder="Box Developer Token" />
+          </label>
+          <label>
+            Box API 検索件数（1〜200）
+            <input type="number" id="box-search-limit" min="1" max="200" value="100" />
           </label>
           <hr />
           <h3>MCP 接続設定</h3>

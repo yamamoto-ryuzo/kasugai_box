@@ -2,6 +2,7 @@ const { invoke } = window.__TAURI__.core;
 
 const $ = (id) => document.getElementById(id);
 let hasMore = false;
+const MAX_SEARCH_LIMIT = 200;
 
 async function loadSavedConfig() {
   const config = await invoke("load_saved_config");
@@ -11,6 +12,7 @@ async function loadSavedConfig() {
   $("box-developer-token").value = config.developerToken || "";
   $("mcp-server-url").value = config.mcpServerUrl || "";
   $("mcp-connection-token").value = config.mcpConnectionToken || "";
+  $("box-search-limit").value = config.searchLimit ?? 100;
   updateOauthStatus();
 }
 
@@ -22,6 +24,7 @@ async function saveSettings() {
     folderUrl: $("folder-url")?.value.trim() || "",
     mcpServerUrl: $("mcp-server-url").value.trim() || null,
     mcpConnectionToken: $("mcp-connection-token").value.trim() || null,
+    searchLimit: Math.min(MAX_SEARCH_LIMIT, Math.max(1, parseInt($("box-search-limit").value) || 100)),
   };
   try {
     await invoke("save_config_cmd", { config });
@@ -183,7 +186,8 @@ async function sendChat() {
   input.value = "";
 
   try {
-    const response = await invoke("box_api_chat", { text });
+    const searchLimit = Math.min(MAX_SEARCH_LIMIT, Math.max(1, parseInt($("box-search-limit").value) || 100));
+    const response = await invoke("box_api_chat", { text, searchLimit });
     hasMore = response.hasMore;
     addChatMessage("assistant", response.reply, true);
   } catch (err) {
@@ -268,6 +272,7 @@ window.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Enter") sendChat();
   });
   $("save-settings")?.addEventListener("click", saveSettings);
+  $("box-search-limit")?.addEventListener("change", saveSettings);
   $("box-developer-token-login")?.addEventListener("click", developerTokenLogin);
   $("box-oauth-auto")?.addEventListener("click", loginBoxOAuthAuto);
   $("box-oauth-logout")?.addEventListener("click", logoutBoxOAuth);
