@@ -122,6 +122,10 @@
             Box API 検索件数（1〜200）
             <input type="number" id="box-search-limit" min="1" max="200" value="100" />
           </label>
+          <label>
+            サイドカー待ち受けポート（1〜65535、既定 8410）
+            <input type="number" id="server-port-input" min="1" max="65535" value="8410" />
+          </label>
           <hr />
           <h3>MCP 接続設定</h3>
           <label>
@@ -138,10 +142,10 @@
           <hr />
           <h3>サイドカー管理</h3>
           <div class="form">
-            <p>ポート: <code id="server-port">-</code> / バインド: <code>127.0.0.1</code></p>
+            <p>実行中ポート: <code id="server-port">-</code> / バインド: <code>127.0.0.1</code></p>
             <button id="server-stop" type="button">kasugai_box を停止</button>
             <div id="server-status-text"></div>
-            <p class="chat-intro">停止は KASUGAI 本体からの再起動または手動実行で復帰します。ポートは環境変数 <code>KASUGAI_BOX_PORT</code> または KASUGAI 本体の起動設定で変更してください。</p>
+            <p class="chat-intro">停止は KASUGAI 本体からの再起動または手動実行で復帰します。ポート設定は keyring に保存され、次回起動時に反映されます（環境変数 <code>KASUGAI_BOX_PORT</code> で上書き可）。</p>
           </div>
         </div>
       </section>

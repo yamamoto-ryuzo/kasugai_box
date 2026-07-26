@@ -34,6 +34,7 @@ async function loadSavedConfig() {
     $("mcp-server-url").value = config.mcpServerUrl || "";
     $("mcp-connection-token").placeholder = config.hasMcpConnectionToken ? SAVED_PLACEHOLDER : "MCP connection token";
     $("box-search-limit").value = config.searchLimit ?? 100;
+    $("server-port-input").value = config.port ?? 8410;
   } catch (err) {
     $("settings-status").textContent = `設定取得エラー: ${err.message}`;
   }
@@ -75,6 +76,7 @@ async function saveSettings() {
     mcpServerUrl: $("mcp-server-url").value.trim(),
     mcpConnectionToken: $("mcp-connection-token").value.trim() || null,
     searchLimit: Math.min(MAX_SEARCH_LIMIT, Math.max(1, parseInt($("box-search-limit").value) || 100)),
+    port: Math.min(65535, Math.max(1, parseInt($("server-port-input").value) || 8410)),
   };
   try {
     await apiPost("/api/v1/config", config);

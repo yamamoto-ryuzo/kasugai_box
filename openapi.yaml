@@ -311,6 +311,7 @@ components:
         folderUrl: { type: string, nullable: true }
         mcpServerUrl: { type: string, nullable: true }
         searchLimit: { type: integer, nullable: true }
+        port: { type: integer, minimum: 1, maximum: 65535 }
         hasClientId: { type: boolean }
         hasClientSecret: { type: boolean }
         hasDeveloperToken: { type: boolean }
@@ -325,7 +326,8 @@ components:
         folderUrl: { type: string, nullable: true }
         mcpServerUrl: { type: string, nullable: true }
         mcpConnectionToken: { type: string, nullable: true }
-        searchLimit: { type: integer, nullable: true }
+        searchLimit: { type: integer, nullable: true, minimum: 1, maximum: 200 }
+        port: { type: integer, nullable: true, minimum: 1, maximum: 65535 }
     JobInfo:
       type: object
       properties:

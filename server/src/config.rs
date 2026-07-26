@@ -16,7 +16,11 @@ pub struct Config {
     pub mcp_connection_token: Option<String>,
     #[serde(default)]
     pub search_limit: Option<usize>,
+    #[serde(default)]
+    pub port: Option<u16>,
 }
+
+pub const DEFAULT_PORT: u16 = 8410;
 
 const KEYRING_SERVICE: &str = "kasugai_box";
 const KEYRING_ACCOUNT: &str = "kasugai_box_config";
@@ -45,6 +49,7 @@ pub struct ConfigView {
     pub folder_url: Option<String>,
     pub mcp_server_url: Option<String>,
     pub search_limit: Option<usize>,
+    pub port: u16,
     pub has_client_id: bool,
     pub has_client_secret: bool,
     pub has_developer_token: bool,
@@ -58,6 +63,7 @@ impl From<&Config> for ConfigView {
             folder_url: c.folder_url.clone(),
             mcp_server_url: c.mcp_server_url.clone(),
             search_limit: c.search_limit,
+            port: c.port.unwrap_or(DEFAULT_PORT),
             has_client_id: has(&c.client_id),
             has_client_secret: has(&c.client_secret),
             has_developer_token: has(&c.developer_token),
@@ -77,6 +83,7 @@ pub struct ConfigUpdate {
     pub mcp_server_url: Option<String>,
     pub mcp_connection_token: Option<String>,
     pub search_limit: Option<usize>,
+    pub port: Option<u16>,
 }
 
 pub fn apply_update(update: ConfigUpdate) -> Result<Config> {
@@ -101,6 +108,9 @@ pub fn apply_update(update: ConfigUpdate) -> Result<Config> {
     }
     if let Some(v) = update.search_limit {
         config.search_limit = Some(v.clamp(1, 200));
+    }
+    if let Some(v) = update.port {
+        config.port = Some(v.max(1));
     }
     save_config(&config)?;
     Ok(config)

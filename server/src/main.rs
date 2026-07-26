@@ -20,7 +20,7 @@ use tokio::sync::Notify;
 use tower_http::cors::CorsLayer;
 
 use crate::box_api::ensure_access_token;
-use crate::config::{apply_update, load_config, save_config, ConfigUpdate, ConfigView};
+use crate::config::{apply_update, load_config, save_config, ConfigUpdate, ConfigView, DEFAULT_PORT};
 use crate::jobs::Jobs;
 
 pub struct AppState {
@@ -28,8 +28,6 @@ pub struct AppState {
     pub port: u16,
     pub shutdown: Arc<Notify>,
 }
-
-const DEFAULT_PORT: u16 = 8410;
 
 const INDEX_HTML: &str = include_str!("../../web/index.html");
 const MAIN_JS: &str = include_str!("../../web/main.js");
@@ -256,9 +254,11 @@ async fn server_stop(State(state): State<Arc<AppState>>) -> Json<serde_json::Val
 
 #[tokio::main]
 async fn main() {
+    let saved_config = load_config();
     let port = std::env::var("KASUGAI_BOX_PORT")
         .ok()
         .and_then(|v| v.parse::<u16>().ok())
+        .or(saved_config.port)
         .unwrap_or(DEFAULT_PORT);
 
     let shutdown = Arc::new(Notify::new());
