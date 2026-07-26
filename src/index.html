@@ -14,7 +14,8 @@
 
       <div class="tabs">
         <button class="tab-btn active" data-tab="photo">Photo</button>
-        <button class="tab-btn" data-tab="mcp">MCP</button>
+        <button class="tab-btn" data-tab="mcp">BOXMCP</button>
+        <button class="tab-btn" data-tab="login">ログイン</button>
         <button class="tab-btn" data-tab="settings">設定</button>
       </div>
 
@@ -49,10 +50,12 @@
       </section>
 
       <section id="tab-mcp" class="tab-panel">
+        <h2>BOXMCP 接続</h2>
+        <p class="chat-intro">Box API への MCP 風チャット接続です。help / me / folder &lt;id&gt; / search &lt;q&gt; が使えます。</p>
         <div class="chat-container" id="chat-container">
           <div class="chat-messages" id="chat-messages"></div>
           <div class="chat-input-row">
-            <input type="text" id="chat-input" placeholder="メッセージを入力（例: help, me, folder 0）" />
+            <input type="text" id="chat-input" placeholder="BOXMCP メッセージ（例: help, me, folder 0, search report）" />
             <button id="chat-send" type="button">送信</button>
           </div>
         </div>
@@ -69,18 +72,32 @@
             <input type="password" id="mcp-client-secret" placeholder="Box Client Secret" />
           </label>
           <label>
-            Box Subject Type
-            <select id="mcp-box-subject-type">
-              <option value="enterprise">enterprise</option>
-              <option value="user">user</option>
-            </select>
+            デベロッパートークン（任意・1時間程度で失効）
+            <input type="password" id="mcp-developer-token" placeholder="Box Developer Token" />
+          </label>
+          <hr />
+          <h3>BOXMCP 接続設定</h3>
+          <label>
+            BOXMCP サーバーURL
+            <input type="text" id="mcp-server-url" placeholder="https://example.com/mcp" />
           </label>
           <label>
-            Box Subject ID
-            <input type="text" id="mcp-box-subject-id" placeholder="Enterprise ID または User ID" />
+            BOXMCP 接続トークン
+            <input type="password" id="mcp-connection-token" placeholder="MCP connection token" />
           </label>
           <button id="mcp-save-settings" type="button">保存</button>
           <div id="mcp-settings-status"></div>
+        </div>
+      </section>
+
+      <section id="tab-login" class="tab-panel">
+        <div class="form">
+          <p>設定タブでデベロッパートークン、またはクライアントIDとクライアントシークレットを入力してください。</p>
+          <button id="mcp-developer-token-login" type="button">デベロッパートークンでログイン</button>
+          <hr />
+          <button id="mcp-oauth-auto" type="button">Box OAuth 自動ログイン（localhost）</button>
+          <button id="mcp-oauth-logout" type="button">ログアウト</button>
+          <div id="mcp-oauth-status"></div>
         </div>
       </section>
 

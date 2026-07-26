@@ -9,15 +9,24 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use tauri::{AppHandle, Manager, Url};
+use tauri::webview::WebviewWindowBuilder;
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
-    pub box_subject_type: Option<String>,
-    pub box_subject_id: Option<String>,
     pub folder_url: Option<String>,
+    pub developer_token: Option<String>,
+    pub access_token: Option<String>,
+    pub refresh_token: Option<String>,
+    pub expires_at: Option<i64>,
+    pub mcp_server_url: Option<String>,
+    pub mcp_connection_token: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -46,12 +55,6 @@ pub struct PhotoRecord {
 }
 
 #[derive(Deserialize, Debug)]
-struct BoxTokenResponse {
-    access_token: String,
-    expires_in: Option<u64>,
-}
-
-#[derive(Deserialize, Debug)]
 struct BoxUser {
     name: String,
     login: String,
@@ -63,18 +66,79 @@ struct BoxSearchResponse {
     entries: Vec<BoxItem>,
 }
 
-async fn get_box_access_token(
+async fn ensure_access_token(config: &mut Config) -> Result<String> {
+    if let Some(token) = config.developer_token.as_ref() {
+        return Ok(token.clone());
+    }
+
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
+    if let Some(token) = config.access_token.as_ref() {
+        if let Some(exp) = config.expires_at {
+            if now < exp - 60 {
+                return Ok(token.clone());
+            }
+        }
+    }
+
+    let client_id = config.client_id.as_deref().context("クライアントIDが設定されていません")?;
+    let client_secret = config.client_secret.as_deref().context("クライアントシークレットが設定されていません")?;
+
+    let token = if let Some(refresh) = config.refresh_token.as_ref() {
+        let tokens = refresh_oauth_token(client_id, client_secret, refresh).await?;
+        let expires_at = now + tokens.expires_in as i64;
+        config.access_token = Some(tokens.access_token.clone());
+        config.refresh_token = Some(tokens.refresh_token);
+        config.expires_at = Some(expires_at);
+        save_config(config)?;
+        tokens.access_token
+    } else {
+        return Err(anyhow::anyhow!("OAuth ログインが必要です"));
+    };
+
+    Ok(token)
+}
+
+#[derive(Deserialize, Debug)]
+pub struct OAuthTokenResponse {
+    access_token: String,
+    refresh_token: String,
+    expires_in: u64,
+}
+
+pub const OAUTH_REDIRECT_URI: &str = "http://localhost:8000/callback";
+pub const OAUTH_REDIRECT_URI_ENCODED: &str = "http%3A%2F%2Flocalhost%3A8000%2Fcallback";
+
+pub fn generate_state() -> String {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("{}-{}", std::process::id(), timestamp)
+}
+
+pub fn extract_query_param(query: &str, key: &str) -> Option<String> {
+    for pair in query.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == key {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
+}
+
+pub async fn get_oauth_token(
     client_id: &str,
     client_secret: &str,
-    subject_type: &str,
-    subject_id: &str,
-) -> Result<String> {
+    code: &str,
+    redirect_uri: &str,
+) -> Result<OAuthTokenResponse> {
     let mut params = std::collections::HashMap::new();
-    params.insert("grant_type", "client_credentials");
+    params.insert("grant_type", "authorization_code");
     params.insert("client_id", client_id);
     params.insert("client_secret", client_secret);
-    params.insert("box_subject_type", subject_type);
-    params.insert("box_subject_id", subject_id);
+    params.insert("code", code);
+    params.insert("redirect_uri", redirect_uri);
 
     let resp = Client::new()
         .post("https://api.box.com/oauth2/token")
@@ -85,11 +149,36 @@ async fn get_box_access_token(
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!("Box token error {}: {}", status, text));
+        return Err(anyhow::anyhow!("Box OAuth token error {}: {}", status, text));
     }
 
-    let data: BoxTokenResponse = resp.json().await?;
-    Ok(data.access_token)
+    Ok(resp.json().await?)
+}
+
+pub async fn refresh_oauth_token(
+    client_id: &str,
+    client_secret: &str,
+    refresh_token: &str,
+) -> Result<OAuthTokenResponse> {
+    let mut params = std::collections::HashMap::new();
+    params.insert("grant_type", "refresh_token");
+    params.insert("client_id", client_id);
+    params.insert("client_secret", client_secret);
+    params.insert("refresh_token", refresh_token);
+
+    let resp = Client::new()
+        .post("https://api.box.com/oauth2/token")
+        .form(&params)
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(anyhow::anyhow!("Box OAuth refresh error {}: {}", status, text));
+    }
+
+    Ok(resp.json().await?)
 }
 
 #[derive(Serialize)]
@@ -279,21 +368,10 @@ fn create_geojson(file_path: &Path, records: &[PhotoRecord]) -> Result<()> {
 }
 
 async fn run_process(
-    client_id: String,
-    client_secret: String,
-    box_subject_type: String,
-    box_subject_id: String,
+    token: String,
     folder_url: String,
     output_dir: String,
 ) -> Result<ProcessResult> {
-    let token = get_box_access_token(
-        &client_id,
-        &client_secret,
-        &box_subject_type,
-        &box_subject_id,
-    )
-    .await?;
-
     let mut headers = header::HeaderMap::new();
     headers.insert(
         header::AUTHORIZATION,
@@ -383,7 +461,17 @@ fn load_saved_config() -> Config {
 
 #[tauri::command]
 fn save_config_cmd(config: Config) -> Result<(), String> {
-    save_config(&config).map_err(|e| e.to_string())
+    let mut existing = load_config();
+    existing.client_id = config.client_id;
+    existing.client_secret = config.client_secret;
+    existing.folder_url = config.folder_url;
+    existing.developer_token = config.developer_token.or(existing.developer_token);
+    existing.access_token = config.access_token.or(existing.access_token);
+    existing.refresh_token = config.refresh_token.or(existing.refresh_token);
+    existing.expires_at = config.expires_at.or(existing.expires_at);
+    existing.mcp_server_url = config.mcp_server_url.or(existing.mcp_server_url);
+    existing.mcp_connection_token = config.mcp_connection_token.or(existing.mcp_connection_token);
+    save_config(&existing).map_err(|e| e.to_string())
 }
 
 #[derive(Serialize)]
@@ -392,7 +480,7 @@ pub struct McpChatResponse {
     pub reply: String,
 }
 
-async fn box_api_get(token: &str, url: &str) -> Result<String> {
+pub async fn box_api_get(token: &str, url: &str) -> Result<String> {
     let client = Client::builder()
         .default_headers({
             let mut h = header::HeaderMap::new();
@@ -413,13 +501,8 @@ async fn box_api_get(token: &str, url: &str) -> Result<String> {
 }
 
 async fn run_mcp_chat(text: String) -> Result<McpChatResponse> {
-    let config = load_config();
-    let client_id = config.client_id.context("クライアントIDが設定されていません")?;
-    let client_secret = config.client_secret.context("クライアントシークレットが設定されていません")?;
-    let subject_type = config.box_subject_type.context("Subject Typeが設定されていません")?;
-    let subject_id = config.box_subject_id.context("Subject IDが設定されていません")?;
-
-    let token = get_box_access_token(&client_id, &client_secret, &subject_type, &subject_id).await?;
+    let mut config = load_config();
+    let token = ensure_access_token(&mut config).await?;
     let parts: Vec<&str> = text.trim().splitn(2, ' ').collect();
     let cmd = parts.first().copied().unwrap_or("").to_lowercase();
     let arg = parts.get(1).copied().unwrap_or("").trim();
@@ -491,21 +574,128 @@ async fn mcp_chat(text: String) -> Result<McpChatResponse, String> {
 async fn process_photos(
     client_id: String,
     client_secret: String,
-    box_subject_type: String,
-    box_subject_id: String,
     folder_url: String,
     output_dir: String,
 ) -> Result<ProcessResult, String> {
-    run_process(
-        client_id,
-        client_secret,
-        box_subject_type,
-        box_subject_id,
-        folder_url,
-        output_dir,
-    )
-    .await
-    .map_err(|e| e.to_string())
+    let mut config = load_config();
+    config.client_id = Some(client_id);
+    config.client_secret = Some(client_secret);
+    config.folder_url = Some(folder_url.clone());
+    save_config(&config).map_err(|e| e.to_string())?;
+    let token = ensure_access_token(&mut config).await.map_err(|e| e.to_string())?;
+    run_process(token, folder_url, output_dir)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn box_api_get_cmd(token: String, url: String) -> Result<String, String> {
+    box_api_get(&token, &url).await.map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OAuthStatus {
+    logged_in: bool,
+    expires_at: Option<i64>,
+}
+
+#[tauri::command]
+async fn box_oauth_login(app: AppHandle, client_id: String, client_secret: String) -> Result<String, String> {
+    let state = generate_state();
+    let auth_url = format!(
+        "https://account.box.com/api/oauth2/authorize?response_type=code&client_id={}&redirect_uri={}&state={}",
+        client_id, OAUTH_REDIRECT_URI_ENCODED, state
+    );
+    let url = auth_url.parse::<Url>().map_err(|e| e.to_string())?;
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+    let tx = Arc::new(Mutex::new(Some(tx)));
+    let app_handle = app.clone();
+    let expected_state = state.clone();
+
+    let _window = WebviewWindowBuilder::new(&app, "oauth", tauri::WebviewUrl::External(url))
+        .title("Box Login")
+        .inner_size(800.0, 700.0)
+        .on_navigation(move |url| {
+            if url.scheme() == "http"
+                && url.host_str() == Some("localhost")
+                && url.port() == Some(8000)
+                && url.path() == "/callback"
+            {
+                if let Some(query) = url.query() {
+                    let state_param = extract_query_param(query, "state");
+                    let code = extract_query_param(query, "code");
+                    if state_param.as_deref() == Some(&expected_state) && code.is_some() {
+                        if let Some(sender) = tx.lock().unwrap().take() {
+                            let _ = sender.send(code.unwrap());
+                        }
+                        if let Some(win) = app_handle.get_webview_window("oauth") {
+                            let _ = win.close();
+                        }
+                        return false;
+                    }
+                }
+            }
+            true
+        })
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let code = tokio::time::timeout(Duration::from_secs(120), rx)
+        .await
+        .map_err(|_| "Box OAuth ログインがタイムアウトしました".to_string())?
+        .map_err(|_| "認可コードの受信に失敗しました".to_string())?;
+
+    let tokens = get_oauth_token(&client_id, &client_secret, &code, OAUTH_REDIRECT_URI)
+        .await
+        .map_err(|e| e.to_string())?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let mut config = load_config();
+    config.client_id = Some(client_id);
+    config.client_secret = Some(client_secret);
+    config.access_token = Some(tokens.access_token.clone());
+    config.refresh_token = Some(tokens.refresh_token);
+    config.expires_at = Some(now + tokens.expires_in as i64);
+    save_config(&config).map_err(|e| e.to_string())?;
+    let body = box_api_get(&tokens.access_token, "https://api.box.com/2.0/users/me")
+        .await
+        .map_err(|e| e.to_string())?;
+    let user: BoxUser = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    Ok(format!("{} ({}) としてログインしました", user.name, user.login))
+}
+
+#[tauri::command]
+async fn developer_token_login(token: String) -> Result<String, String> {
+    let body = box_api_get(&token, "https://api.box.com/2.0/users/me")
+        .await
+        .map_err(|e| e.to_string())?;
+    let user: BoxUser = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    let mut config = load_config();
+    config.developer_token = Some(token);
+    save_config(&config).map_err(|e| e.to_string())?;
+    Ok(format!("{} ({}) としてログインしました（デベロッパートークン）", user.name, user.login))
+}
+
+#[tauri::command]
+async fn box_oauth_status() -> Result<OAuthStatus, String> {
+    let config = load_config();
+    Ok(OAuthStatus {
+        logged_in: config.access_token.is_some() || config.developer_token.is_some(),
+        expires_at: config.expires_at,
+    })
+}
+
+#[tauri::command]
+async fn box_oauth_logout() -> Result<(), String> {
+    let mut config = load_config();
+    config.access_token = None;
+    config.refresh_token = None;
+    config.expires_at = None;
+    save_config(&config).map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -515,7 +705,12 @@ pub fn run() {
             load_saved_config,
             save_config_cmd,
             process_photos,
-            mcp_chat
+            mcp_chat,
+            box_api_get_cmd,
+            box_oauth_login,
+            developer_token_login,
+            box_oauth_status,
+            box_oauth_logout
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

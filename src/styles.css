@@ -125,6 +125,12 @@ tr:nth-child(even) {
   background: #fafafa;
 }
 
+.chat-intro {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.85rem;
+  color: #555;
+}
+
 .chat-container {
   display: flex;
   flex-direction: column;

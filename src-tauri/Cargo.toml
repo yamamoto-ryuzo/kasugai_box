@@ -1,12 +1,12 @@
 [package]
-name = "box_photo_geo_url_rs"
+name = "kasugai_box"
 version = "0.1.0"
 description = "kasugai_box Tauri App"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "box_photo_geo_url_rs_lib"
+name = "kasugai_box_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

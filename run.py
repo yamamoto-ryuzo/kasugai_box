@@ -22,7 +22,7 @@ def run_release():
         / "src-tauri"
         / "target"
         / "release"
-        / "box_photo_geo_url_rs.exe"
+        / "kasugai_box.exe"
     )
     if not exe.exists():
         print(f"リリース実行ファイルが見つかりません: {exe}", file=sys.stderr)

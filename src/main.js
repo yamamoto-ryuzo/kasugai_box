@@ -7,17 +7,20 @@ async function loadSavedConfig() {
   $("folder-url").value = config.folderUrl || "";
   $("mcp-client-id").value = config.clientId || "";
   $("mcp-client-secret").value = config.clientSecret || "";
-  $("mcp-box-subject-type").value = config.boxSubjectType || "enterprise";
-  $("mcp-box-subject-id").value = config.boxSubjectId || "";
+  $("mcp-developer-token").value = config.developerToken || "";
+  $("mcp-server-url").value = config.mcpServerUrl || "";
+  $("mcp-connection-token").value = config.mcpConnectionToken || "";
+  updateOauthStatus();
 }
 
 async function saveMcpSettings() {
   const config = {
     clientId: $("mcp-client-id").value.trim(),
     clientSecret: $("mcp-client-secret").value.trim(),
-    boxSubjectType: $("mcp-box-subject-type").value.trim(),
-    boxSubjectId: $("mcp-box-subject-id").value.trim(),
+    developerToken: $("mcp-developer-token").value.trim() || null,
     folderUrl: $("folder-url")?.value.trim() || "",
+    mcpServerUrl: $("mcp-server-url").value.trim() || null,
+    mcpConnectionToken: $("mcp-connection-token").value.trim() || null,
   };
   try {
     await invoke("save_config_cmd", { config });
@@ -25,6 +28,58 @@ async function saveMcpSettings() {
     loadSavedConfig();
   } catch (err) {
     $("mcp-settings-status").textContent = `エラー: ${err}`;
+  }
+}
+
+async function updateOauthStatus() {
+  try {
+    const status = await invoke("box_oauth_status");
+    const text = status.loggedIn
+      ? `ログイン中（有効期限: ${new Date(status.expiresAt * 1000).toLocaleString()}）`
+      : "未ログイン";
+    $("mcp-oauth-status").textContent = text;
+  } catch (err) {
+    $("mcp-oauth-status").textContent = `OAuth 状態取得エラー: ${err}`;
+  }
+}
+
+async function developerTokenLogin() {
+  const token = $("mcp-developer-token").value.trim();
+  if (!token) {
+    $("mcp-oauth-status").textContent = "設定タブでデベロッパートークンを入力してください";
+    return;
+  }
+  $("mcp-oauth-status").textContent = "ログイン確認中...";
+  try {
+    const message = await invoke("developer_token_login", { token });
+    $("mcp-oauth-status").textContent = message;
+  } catch (err) {
+    $("mcp-oauth-status").textContent = `エラー: ${err}`;
+  }
+}
+
+async function loginBoxOAuthAuto() {
+  const clientId = $("mcp-client-id").value.trim();
+  const clientSecret = $("mcp-client-secret").value.trim();
+  if (!clientId || !clientSecret) {
+    $("mcp-oauth-status").textContent = "クライアントIDとシークレットを入力してください";
+    return;
+  }
+  $("mcp-oauth-status").textContent = "ブラウザでログインしてください...";
+  try {
+    const message = await invoke("box_oauth_login", { clientId, clientSecret });
+    $("mcp-oauth-status").textContent = message;
+  } catch (err) {
+    $("mcp-oauth-status").textContent = `エラー: ${err}`;
+  }
+}
+
+async function logoutBoxOAuth() {
+  try {
+    await invoke("box_oauth_logout");
+    $("mcp-oauth-status").textContent = "ログアウトしました";
+  } catch (err) {
+    $("mcp-oauth-status").textContent = `エラー: ${err}`;
   }
 }
 
@@ -63,13 +118,11 @@ function escapeHtml(text) {
 async function run() {
   const clientId = $("mcp-client-id").value.trim();
   const clientSecret = $("mcp-client-secret").value.trim();
-  const boxSubjectType = $("mcp-box-subject-type").value.trim();
-  const boxSubjectId = $("mcp-box-subject-id").value.trim();
   const folderUrl = $("folder-url").value.trim();
   const outputDir = $("output-dir").value.trim() || "box_photo_geo_url/output";
 
-  if (!clientId || !clientSecret || !boxSubjectId || !folderUrl) {
-    $("status").textContent = "クライアントID、シークレット、Subject ID、フォルダURLを入力してください。";
+  if (!clientId || !clientSecret || !folderUrl) {
+    $("status").textContent = "クライアントID、シークレット、フォルダURLを入力してください。";
     return;
   }
 
@@ -79,13 +132,11 @@ async function run() {
 
   try {
     await invoke("save_config_cmd", {
-      config: { clientId, clientSecret, boxSubjectType, boxSubjectId, folderUrl },
+      config: { clientId, clientSecret, folderUrl },
     });
     const result = await invoke("process_photos", {
       clientId,
       clientSecret,
-      boxSubjectType,
-      boxSubjectId,
       folderUrl,
       outputDir,
     });
@@ -153,4 +204,7 @@ window.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Enter") sendChat();
   });
   $("mcp-save-settings")?.addEventListener("click", saveMcpSettings);
+  $("mcp-developer-token-login")?.addEventListener("click", developerTokenLogin);
+  $("mcp-oauth-auto")?.addEventListener("click", loginBoxOAuthAuto);
+  $("mcp-oauth-logout")?.addEventListener("click", logoutBoxOAuth);
 });
