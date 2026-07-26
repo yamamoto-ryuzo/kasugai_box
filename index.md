@@ -1,10 +1,19 @@
 # kasugai_box
 
-KASUGAI 用 API サイドカーです。Box フォルダ内の画像ファイルを取得し、EXIF 情報から緯度経度・撮影日を抽出し、共有リンク付きで一覧化・GeoJSON/CSV 出力を行います。
-
-KASUGAI 本体は `http://127.0.0.1:8410/ui` を WebView のペイン/タブで読み込みます。AI エージェント向けには `POST /mcp` で同じ機能をツールとして提供します。
+**Rust × axum** で実装された **KASUGAI 用 API サイドカー** です。Box フォルダ内の画像ファイルを取得し、EXIF 情報から緯度経度・撮影日を抽出し、共有リンク付きで一覧化・GeoJSON/CSV 出力を行います。
 
 > 画像の EXIF 情報は画像ファイル自体に埋め込まれているため、画像本体の取得（ダウンロード）が必要です。Box API は画像の EXIF をメタデータとして返しません。
+
+---
+
+## 技術スタックと役割
+
+| システム | 技術スタック | 主な役割 |
+| :--- | :--- | :--- |
+| **kasugai_box**（本サイドカー） | Rust × axum | Box 連携、写真 EXIF 処理、CSV/GeoJSON 出力、REST API / MCP 提供 |
+| **KASUGAI 本体** | Tauri v2 × Rust | ウィンドウ/WebView 制御、サイドカーの起動管理、複数サイトの統合 UI |
+
+KASUGAI 本体は **ブラウザ/タブを操作するため** の Tauri アプリです。`kasugai_box` はその横で動く独立した HTTP サービスで、KASUGAI の WebView から `http://127.0.0.1:8410/ui` を読み込み、または AI エージェントが `POST /mcp` で利用します。
 
 ---
 

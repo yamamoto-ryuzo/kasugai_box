@@ -1,6 +1,15 @@
 # kasugai_box
 
-KASUGAI 用 API サイドカー。Box フォルダ内画像の EXIF 抽出（CSV/GeoJSON 出力）、Box API チャット、Box OAuth ログインを HTTP/REST + MCP で提供します。
+**Rust × axum** で実装された **KASUGAI 用 API サイドカー** です。Box フォルダ内画像の EXIF 抽出（CSV/GeoJSON 出力）、Box API チャット、Box OAuth ログインを HTTP/REST + MCP で提供します。
+
+## KASUGAI との違い
+
+| システム | 技術スタック | 主な役割 |
+| :--- | :--- | :--- |
+| **kasugai_box** | Rust × axum | Box 連携、EXIF 処理、REST API / MCP サーバー |
+| **KASUGAI 本体** | Tauri v2 × Rust | ウィンドウ/WebView 制御、サイドカー起動、ブラウザ統合 UI |
+
+KASUGAI 本体は **ブラウザ/タブをいろいろ操作するため** の Tauri アプリです。`kasugai_box` はその横で動く独立した HTTP サービスで、`127.0.0.1:8410` で待ち受けます。
 
 ## ダウンロード
 
