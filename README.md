@@ -13,7 +13,7 @@ KASUGAI 本体は **ブラウザ/タブをいろいろ操作するため** の T
 
 ## ダウンロード
 
-- **[download/kasugai_box.exe](./download/kasugai_box.exe)** — `python run.py -B` でビルド・配置されます
+- **[download/kasugai_box.zip](./download/kasugai_box.zip)** — `python run.py -B` でビルド・配置されます（ZIP 内の `kasugai_box.exe` を展開して利用してください）
 
 ## ドキュメント（GitHub Pages）
 

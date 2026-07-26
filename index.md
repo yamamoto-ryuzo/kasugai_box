@@ -37,7 +37,7 @@ KASUGAI 本体は **ブラウザ/タブを操作するため** の Tauri アプ�
 
 | 種別 | 入手先 | 備考 |
 | :--- | :--- | :--- |
-| リリースビルド済みバイナリ | [download/kasugai_box.exe](./download/kasugai_box.exe) | `python run.py -B` でビルド・配置されます |
+| リリースビルド済みバイナリ | [download/kasugai_box.zip](./download/kasugai_box.zip) | `python run.py -B` でビルド・配置されます。ZIP 内の `kasugai_box.exe` を展開して利用してください |
 | ソースコード | [GitHub リポジトリ](https://github.com/yamamoto-ryuzo/kasugai_box) | `python run.py -B`（または `cargo build --release`）でビルド可能 |
 
 ---
@@ -138,7 +138,7 @@ python run.py --release
 
 ### リリースビルド
 
-推奨：`python run.py -B` で `download/kasugai_box.exe` を一括生成・配置します。
+推奨：`python run.py -B` で `download/kasugai_box.zip` を一括生成・配置します。
 
 ```sh
 cd C:\devin\kasugai_box
@@ -152,7 +152,7 @@ cd C:\devin\kasugai_box\server
 cargo build --release
 ```
 
-ビルドが完了すると、`server/target/release/kasugai_box.exe` が生成されます。`python run.py -B` 実行時は同時に `download/kasugai_box.exe` へコピーされます。
+ビルドが完了すると、`server/target/release/kasugai_box.exe` が生成されます。`python run.py -B` 実行時は同時に `download/kasugai_box.zip` へ圧縮・配置されます。
 
 ---
 
