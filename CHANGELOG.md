@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-07-26
+
+メジャーアップデート。Tauri v2 デスクトップアプリから **API サイドカー（HTTP/REST/MCP サーバー）** へ再構成しました。`kasugai_box` は `127.0.0.1:8410` で待ち受ける独立したサイドカーとなり、KASUGAI 本体は WebView または MCP クライアントとして利用します。
+
 ### Added
 - API サイドカー化：axum 製 HTTP サーバーを実装（`server/`）
 - `GET /health` で名前・バージョンを返すヘルスチェック
