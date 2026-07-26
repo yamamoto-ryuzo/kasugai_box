@@ -1,33 +1,34 @@
 const { invoke } = window.__TAURI__.core;
 
 const $ = (id) => document.getElementById(id);
+let hasMore = false;
 
 async function loadSavedConfig() {
   const config = await invoke("load_saved_config");
   $("folder-url").value = config.folderUrl || "";
-  $("mcp-client-id").value = config.clientId || "";
-  $("mcp-client-secret").value = config.clientSecret || "";
-  $("mcp-developer-token").value = config.developerToken || "";
+  $("box-client-id").value = config.clientId || "";
+  $("box-client-secret").value = config.clientSecret || "";
+  $("box-developer-token").value = config.developerToken || "";
   $("mcp-server-url").value = config.mcpServerUrl || "";
   $("mcp-connection-token").value = config.mcpConnectionToken || "";
   updateOauthStatus();
 }
 
-async function saveMcpSettings() {
+async function saveSettings() {
   const config = {
-    clientId: $("mcp-client-id").value.trim(),
-    clientSecret: $("mcp-client-secret").value.trim(),
-    developerToken: $("mcp-developer-token").value.trim() || null,
+    clientId: $("box-client-id").value.trim(),
+    clientSecret: $("box-client-secret").value.trim(),
+    developerToken: $("box-developer-token").value.trim() || null,
     folderUrl: $("folder-url")?.value.trim() || "",
     mcpServerUrl: $("mcp-server-url").value.trim() || null,
     mcpConnectionToken: $("mcp-connection-token").value.trim() || null,
   };
   try {
     await invoke("save_config_cmd", { config });
-    $("mcp-settings-status").textContent = "保存しました";
+    $("settings-status").textContent = "保存しました";
     loadSavedConfig();
   } catch (err) {
-    $("mcp-settings-status").textContent = `エラー: ${err}`;
+    $("settings-status").textContent = `エラー: ${err}`;
   }
 }
 
@@ -37,49 +38,49 @@ async function updateOauthStatus() {
     const text = status.loggedIn
       ? `ログイン中（有効期限: ${new Date(status.expiresAt * 1000).toLocaleString()}）`
       : "未ログイン";
-    $("mcp-oauth-status").textContent = text;
+    $("box-oauth-status").textContent = text;
   } catch (err) {
-    $("mcp-oauth-status").textContent = `OAuth 状態取得エラー: ${err}`;
+    $("box-oauth-status").textContent = `OAuth 状態取得エラー: ${err}`;
   }
 }
 
 async function developerTokenLogin() {
-  const token = $("mcp-developer-token").value.trim();
+  const token = $("box-developer-token").value.trim();
   if (!token) {
-    $("mcp-oauth-status").textContent = "設定タブでデベロッパートークンを入力してください";
+    $("box-oauth-status").textContent = "設定タブでデベロッパートークンを入力してください";
     return;
   }
-  $("mcp-oauth-status").textContent = "ログイン確認中...";
+  $("box-oauth-status").textContent = "ログイン確認中...";
   try {
     const message = await invoke("developer_token_login", { token });
-    $("mcp-oauth-status").textContent = message;
+    $("box-oauth-status").textContent = message;
   } catch (err) {
-    $("mcp-oauth-status").textContent = `エラー: ${err}`;
+    $("box-oauth-status").textContent = `エラー: ${err}`;
   }
 }
 
 async function loginBoxOAuthAuto() {
-  const clientId = $("mcp-client-id").value.trim();
-  const clientSecret = $("mcp-client-secret").value.trim();
+  const clientId = $("box-client-id").value.trim();
+  const clientSecret = $("box-client-secret").value.trim();
   if (!clientId || !clientSecret) {
-    $("mcp-oauth-status").textContent = "クライアントIDとシークレットを入力してください";
+    $("box-oauth-status").textContent = "クライアントIDとシークレットを入力してください";
     return;
   }
-  $("mcp-oauth-status").textContent = "ブラウザでログインしてください...";
+  $("box-oauth-status").textContent = "ブラウザでログインしてください...";
   try {
     const message = await invoke("box_oauth_login", { clientId, clientSecret });
-    $("mcp-oauth-status").textContent = message;
+    $("box-oauth-status").textContent = message;
   } catch (err) {
-    $("mcp-oauth-status").textContent = `エラー: ${err}`;
+    $("box-oauth-status").textContent = `エラー: ${err}`;
   }
 }
 
 async function logoutBoxOAuth() {
   try {
     await invoke("box_oauth_logout");
-    $("mcp-oauth-status").textContent = "ログアウトしました";
+    $("box-oauth-status").textContent = "ログアウトしました";
   } catch (err) {
-    $("mcp-oauth-status").textContent = `エラー: ${err}`;
+    $("box-oauth-status").textContent = `エラー: ${err}`;
   }
 }
 
@@ -116,8 +117,8 @@ function escapeHtml(text) {
 }
 
 async function run() {
-  const clientId = $("mcp-client-id").value.trim();
-  const clientSecret = $("mcp-client-secret").value.trim();
+  const clientId = $("box-client-id").value.trim();
+  const clientSecret = $("box-client-secret").value.trim();
   const folderUrl = $("folder-url").value.trim();
   const outputDir = $("output-dir").value.trim() || "box_photo_geo_url/output";
 
@@ -170,29 +171,73 @@ function initTabs() {
 
 async function sendChat() {
   const input = $("chat-input");
-  const text = input.value.trim();
-  if (!text) return;
+  let text = input.value.trim();
+  if (!text) {
+    if (hasMore) {
+      text = "more";
+    } else {
+      return;
+    }
+  }
   addChatMessage("user", text);
   input.value = "";
 
   try {
-    const response = await invoke("mcp_chat", { text });
-    addChatMessage("assistant", response.reply);
+    const response = await invoke("box_api_chat", { text });
+    hasMore = response.hasMore;
+    addChatMessage("assistant", response.reply, true);
   } catch (err) {
+    hasMore = false;
     addChatMessage("assistant", `エラー: ${err}`);
   }
 }
 
-function addChatMessage(role, text) {
+function addChatMessage(role, text, isHtml = false) {
   const container = $("chat-messages");
   const row = document.createElement("div");
   row.className = `chat-message ${role}`;
   const bubble = document.createElement("div");
   bubble.className = "chat-bubble";
-  bubble.textContent = text;
+  if (isHtml) {
+    bubble.innerHTML = text;
+  } else {
+    bubble.textContent = text;
+  }
   row.appendChild(bubble);
   container.appendChild(row);
   container.scrollTop = container.scrollHeight;
+}
+
+async function listMcpTools() {
+  const status = $("mcp-status");
+  const result = $("mcp-result");
+  status.textContent = "取得中...";
+  try {
+    const text = await invoke("mcp_list_tools");
+    result.textContent = text;
+    status.textContent = "完了";
+  } catch (err) {
+    status.textContent = `エラー: ${err}`;
+  }
+}
+
+async function callMcpTool() {
+  const name = $("mcp-tool-name").value.trim();
+  const args = $("mcp-tool-args").value.trim();
+  const status = $("mcp-status");
+  const result = $("mcp-result");
+  if (!name) {
+    status.textContent = "ツール名を入力してください";
+    return;
+  }
+  status.textContent = "実行中...";
+  try {
+    const text = await invoke("mcp_call_tool", { name, arguments: args });
+    result.textContent = text;
+    status.textContent = "完了";
+  } catch (err) {
+    status.textContent = `エラー: ${err}`;
+  }
 }
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -203,8 +248,18 @@ window.addEventListener("DOMContentLoaded", () => {
   $("chat-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendChat();
   });
-  $("mcp-save-settings")?.addEventListener("click", saveMcpSettings);
-  $("mcp-developer-token-login")?.addEventListener("click", developerTokenLogin);
-  $("mcp-oauth-auto")?.addEventListener("click", loginBoxOAuthAuto);
-  $("mcp-oauth-logout")?.addEventListener("click", logoutBoxOAuth);
+  $("save-settings")?.addEventListener("click", saveSettings);
+  $("box-developer-token-login")?.addEventListener("click", developerTokenLogin);
+  $("box-oauth-auto")?.addEventListener("click", loginBoxOAuthAuto);
+  $("box-oauth-logout")?.addEventListener("click", logoutBoxOAuth);
+  $("mcp-list-tools")?.addEventListener("click", listMcpTools);
+  $("mcp-call-tool")?.addEventListener("click", callMcpTool);
+
+  $("chat-messages").addEventListener("click", (e) => {
+    const a = e.target.closest("a[target='_blank']");
+    if (a) {
+      e.preventDefault();
+      invoke("open_url", { url: a.href });
+    }
+  });
 });

@@ -14,7 +14,9 @@
 
       <div class="tabs">
         <button class="tab-btn active" data-tab="photo">Photo</button>
-        <button class="tab-btn" data-tab="mcp">BOXMCP</button>
+        <button class="tab-btn" data-tab="box-api">Box API</button>
+        <button class="tab-btn" data-tab="mcp">MCP</button>
+        <button class="tab-btn" data-tab="api-help">APIヘルプ</button>
         <button class="tab-btn" data-tab="login">ログイン</button>
         <button class="tab-btn" data-tab="settings">設定</button>
       </div>
@@ -49,55 +51,90 @@
         </table>
       </section>
 
-      <section id="tab-mcp" class="tab-panel">
-        <h2>BOXMCP 接続</h2>
-        <p class="chat-intro">Box API への MCP 風チャット接続です。help / me / folder &lt;id&gt; / search &lt;q&gt; が使えます。search はファイル名だけでなく、メタデータ・文書内テキストも対象の Box 標準検索です。</p>
+      <section id="tab-box-api" class="tab-panel">
+        <h2>Box API 接続</h2>
+        <p class="chat-intro">Box API を利用したチャット接続です。詳細な使い方は「APIヘルプ」タブを確認してください。</p>
         <div class="chat-container" id="chat-container">
           <div class="chat-messages" id="chat-messages"></div>
           <div class="chat-input-row">
-            <input type="text" id="chat-input" placeholder="BOXMCP メッセージ（例: help, me, folder 0, search report）" />
+            <input type="text" id="chat-input" placeholder="Box API メッセージ（例: help, me, folder 0, search report）" />
             <button id="chat-send" type="button">送信</button>
           </div>
         </div>
+      </section>
+
+      <section id="tab-mcp" class="tab-panel">
+        <h2>MCP 接続</h2>
+        <p class="chat-intro">MCP サーバーに接続し、ツール一覧の取得と実行ができます。設定は「設定」タブで行ってください。</p>
+        <div class="form">
+          <button id="mcp-list-tools" type="button">ツール一覧を取得</button>
+          <label>
+            ツール名
+            <input type="text" id="mcp-tool-name" placeholder="tool-name" />
+          </label>
+          <label>
+            引数 (JSON)
+            <input type="text" id="mcp-tool-args" value="{}" />
+          </label>
+          <button id="mcp-call-tool" type="button">ツールを実行</button>
+        </div>
+        <div id="mcp-status"></div>
+        <pre id="mcp-result"></pre>
+      </section>
+
+      <section id="tab-api-help" class="tab-panel">
+        <h2>APIヘルプ</h2>
+        <ul class="api-help-list">
+          <li>この接続は <strong>Box API</strong> を使用しています。</li>
+          <li>利用可能なコマンド: <code>help</code> / <code>me</code> / <code>folder &lt;id&gt;</code> / <code>search &lt;q&gt;</code></li>
+          <li>コマンドと引数は<strong>半角スペース</strong>で区切ってください。</li>
+          <li>全角スペース（　）は検索語の一部として扱われます。</li>
+          <li>コマンドなしで単語だけ入力した場合、自動的に <code>search</code> として扱われます。</li>
+          <li><code>search</code> は Box 標準検索です。ファイル名・メタデータ・文書内テキストを対象に返します。</li>
+          <li>検索結果は <strong>50 件ずつ</strong>取得し、<strong>Enter</strong> を押すと次の 50 件を読み込みます。</li>
+          <li>複数単語を空白区切りで入力した場合、デフォルトは <strong>OR</strong> 扱いです。</li>
+          <li><code>AND</code> / <code>OR</code> / <code>NOT</code> は大文字で指定してください。</li>
+          <li><code>"phrase"</code> のようにダブルクォートで囲むと、フレーズ完全一致検索になります。</li>
+        </ul>
       </section>
 
       <section id="tab-settings" class="tab-panel">
         <div class="form">
           <label>
             クライアントID
-            <input type="text" id="mcp-client-id" placeholder="Box Client ID" />
+            <input type="text" id="box-client-id" placeholder="Box Client ID" />
           </label>
           <label>
             クライアントシークレット
-            <input type="password" id="mcp-client-secret" placeholder="Box Client Secret" />
+            <input type="password" id="box-client-secret" placeholder="Box Client Secret" />
           </label>
           <label>
             デベロッパートークン（任意・1時間程度で失効）
-            <input type="password" id="mcp-developer-token" placeholder="Box Developer Token" />
+            <input type="password" id="box-developer-token" placeholder="Box Developer Token" />
           </label>
           <hr />
-          <h3>BOXMCP 接続設定</h3>
+          <h3>MCP 接続設定</h3>
           <label>
-            BOXMCP サーバーURL
+            MCP サーバーURL
             <input type="text" id="mcp-server-url" placeholder="https://example.com/mcp" />
           </label>
           <label>
-            BOXMCP 接続トークン
+            MCP 接続トークン
             <input type="password" id="mcp-connection-token" placeholder="MCP connection token" />
           </label>
-          <button id="mcp-save-settings" type="button">保存</button>
-          <div id="mcp-settings-status"></div>
+          <button id="save-settings" type="button">保存</button>
+          <div id="settings-status"></div>
         </div>
       </section>
 
       <section id="tab-login" class="tab-panel">
         <div class="form">
           <p>設定タブでデベロッパートークン、またはクライアントIDとクライアントシークレットを入力してください。</p>
-          <button id="mcp-developer-token-login" type="button">デベロッパートークンでログイン</button>
+          <button id="box-developer-token-login" type="button">デベロッパートークンでログイン</button>
           <hr />
-          <button id="mcp-oauth-auto" type="button">Box OAuth 自動ログイン（localhost）</button>
-          <button id="mcp-oauth-logout" type="button">ログアウト</button>
-          <div id="mcp-oauth-status"></div>
+          <button id="box-oauth-auto" type="button">Box OAuth 自動ログイン（localhost）</button>
+          <button id="box-oauth-logout" type="button">ログアウト</button>
+          <div id="box-oauth-status"></div>
         </div>
       </section>
 

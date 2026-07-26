@@ -30,10 +30,30 @@ pub struct Config {
 }
 
 #[derive(Deserialize, Debug)]
+struct BoxSharedLink {
+    url: String,
+    access: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct BoxPathEntry {
+    name: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct BoxPathCollection {
+    entries: Vec<BoxPathEntry>,
+}
+
+#[derive(Deserialize, Debug)]
 struct BoxItem {
     r#type: String,
     id: String,
     name: String,
+    #[serde(default)]
+    shared_link: Option<BoxSharedLink>,
+    #[serde(default)]
+    path_collection: Option<BoxPathCollection>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -64,6 +84,10 @@ struct BoxUser {
 #[derive(Deserialize, Debug)]
 struct BoxSearchResponse {
     entries: Vec<BoxItem>,
+    #[serde(default)]
+    offset: Option<usize>,
+    #[serde(default)]
+    total_count: Option<usize>,
 }
 
 async fn ensure_access_token(config: &mut Config) -> Result<String> {
@@ -476,8 +500,9 @@ fn save_config_cmd(config: Config) -> Result<(), String> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct McpChatResponse {
+pub struct BoxApiChatResponse {
     pub reply: String,
+    pub has_more: bool,
 }
 
 pub async fn box_api_get(token: &str, url: &str) -> Result<String> {
@@ -500,25 +525,137 @@ pub async fn box_api_get(token: &str, url: &str) -> Result<String> {
     Ok(text)
 }
 
-async fn run_mcp_chat(text: String) -> Result<McpChatResponse> {
+async fn box_api_put(token: &str, url: &str, body: &str) -> Result<String> {
+    let client = Client::builder()
+        .default_headers({
+            let mut h = header::HeaderMap::new();
+            h.insert(
+                header::AUTHORIZATION,
+                header::HeaderValue::from_str(&format!("Bearer {}", token))?,
+            );
+            h.insert(
+                header::CONTENT_TYPE,
+                header::HeaderValue::from_static("application/json"),
+            );
+            h
+        })
+        .build()?;
+    let resp = client.put(url).body(body.to_string()).send().await?;
+    let status = resp.status();
+    let text = resp.text().await?;
+    if !status.is_success() {
+        return Err(anyhow::anyhow!("Box API error {}: {}", status, text));
+    }
+    Ok(text)
+}
+
+#[derive(Clone)]
+struct SearchState {
+    query: String,
+    next_offset: usize,
+}
+
+struct SearchResult {
+    reply: String,
+    offset: usize,
+    next_offset: usize,
+    total_count: usize,
+    has_more: bool,
+}
+
+static LAST_SEARCH: Mutex<Option<SearchState>> = Mutex::new(None);
+
+fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+async fn search_box(token: &str, query: &str, offset: usize) -> Result<SearchResult> {
+    let mut url = reqwest::Url::parse("https://api.box.com/2.0/search")?;
+    {
+        let mut pairs = url.query_pairs_mut();
+        pairs.append_pair("query", query);
+        pairs.append_pair("limit", "50");
+        pairs.append_pair("offset", &offset.to_string());
+        pairs.append_pair("fields", "type,id,name,path_collection,shared_link");
+    }
+    let body = box_api_get(token, url.as_str()).await?;
+    let data: BoxSearchResponse = serde_json::from_str(&body)?;
+    let response_offset = data.offset.unwrap_or(offset);
+    let total_count = data.total_count.unwrap_or(0);
+    let next_offset = response_offset + data.entries.len();
+    let has_more = next_offset < total_count;
+    let reply = if data.entries.is_empty() {
+        "検索結果が見つかりませんでした。".to_string()
+    } else {
+        data.entries
+            .iter()
+            .map(|i| {
+                let path = i
+                    .path_collection
+                    .as_ref()
+                    .map(|pc| {
+                        let parents: Vec<&str> = pc.entries.iter().skip(1).map(|e| e.name.as_str()).collect();
+                        if parents.is_empty() {
+                            i.name.clone()
+                        } else {
+                            parents.join("/") + "/" + &i.name
+                        }
+                    })
+                    .unwrap_or_else(|| i.name.clone());
+                let url = i
+                    .shared_link
+                    .as_ref()
+                    .map(|l| l.url.clone())
+                    .unwrap_or_else(|| {
+                        if i.r#type == "folder" {
+                            format!("https://app.box.com/folder/{}", i.id)
+                        } else {
+                            format!("https://app.box.com/file/{}", i.id)
+                        }
+                    });
+                format!("<a href=\"{}\" target=\"_blank\">{}</a>", escape_html(&url), escape_html(&path))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    Ok(SearchResult {
+        reply,
+        offset: response_offset,
+        next_offset,
+        total_count,
+        has_more,
+    })
+}
+
+async fn run_box_api_chat(text: String) -> Result<BoxApiChatResponse> {
     let mut config = load_config();
     let token = ensure_access_token(&mut config).await?;
     let parts: Vec<&str> = text.trim().splitn(2, ' ').collect();
     let cmd = parts.first().copied().unwrap_or("").to_lowercase();
     let arg = parts.get(1).copied().unwrap_or("").trim();
 
-    let reply = match cmd.as_str() {
+    let reply;
+    let mut has_more = false;
+    let mut next_state: Option<SearchState> = None;
+
+    match cmd.as_str() {
         "help" | "?" | "" => {
-            "利用可能なコマンド:\n".to_string()
+            reply = "利用可能なコマンド:\n".to_string()
                 + "  help        このヘルプを表示\n"
                 + "  me          ログインユーザー情報を表示\n"
                 + "  folder <id> フォルダ内のアイテムを一覧\n"
-                + "  search <q>  Box標準検索（ファイル名・メタデータ・文書内テキスト）"
+                + "  search <q>  Box標準検索（ファイル名・メタデータ・文書内テキスト）\n"
+                + "  link <type> <id> ファイルまたはフォルダの共有リンクを作成\n"
+                + "  ルール: コマンドと引数は半角スペースで区切ってください。全角スペースは検索語の一部になります。\n"
+                + "  検索結果は 50 件ずつ取得し、Enter で次の 50 件を読み込みます。";
         }
         "me" | "user" => {
             let body = box_api_get(&token, "https://api.box.com/2.0/users/me").await?;
             let user: BoxUser = serde_json::from_str(&body)?;
-            format!("ユーザー: {} ({} / {})", user.name, user.login, user.r#type)
+            reply = format!("ユーザー: {} ({} / {})", user.name, user.login, user.r#type);
         }
         "folder" => {
             let id = if arg.is_empty() { "0".to_string() } else { arg.to_string() };
@@ -529,45 +666,107 @@ async fn run_mcp_chat(text: String) -> Result<McpChatResponse> {
             let body = box_api_get(&token, &url).await?;
             let data: BoxFolderItems = serde_json::from_str(&body)?;
             if data.entries.is_empty() {
-                "アイテムが見つかりませんでした。".to_string()
+                reply = "アイテムが見つかりませんでした。".to_string();
             } else {
-                data.entries
+                reply = data.entries
                     .iter()
                     .map(|i| format!("[{}] {} ({})", i.r#type, i.name, i.id))
                     .collect::<Vec<_>>()
-                    .join("\n")
+                    .join("\n");
             }
         }
         "search" => {
             if arg.is_empty() {
-                "検索語を入力してください。".to_string()
+                reply = "検索語を入力してください。".to_string();
             } else {
-                let url = format!(
-                    "https://api.box.com/2.0/search?query={}&limit=20&fields=type,id,name",
-                    arg
+                let result = search_box(&token, arg, 0).await?;
+                let footer = format!(
+                    "{}-{}/{} 件{}",
+                    result.offset + 1,
+                    result.next_offset,
+                    result.total_count,
+                    if result.has_more { "（Enter で続き）" } else { "（すべて表示）" }
                 );
-                let body = box_api_get(&token, &url).await?;
-                let data: BoxSearchResponse = serde_json::from_str(&body)?;
-                if data.entries.is_empty() {
-                    "検索結果が見つかりませんでした。".to_string()
-                } else {
-                    data.entries
-                        .iter()
-                        .map(|i| format!("[{}] {} ({})", i.r#type, i.name, i.id))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                }
+                reply = format!("{}\n\n{}", result.reply, footer);
+                has_more = result.has_more;
+                next_state = Some(SearchState {
+                    query: arg.to_string(),
+                    next_offset: result.next_offset,
+                });
             }
         }
-        _ => "不明なコマンドです。'help' で使い方を確認できます。".to_string(),
-    };
+        "more" => {
+            let last = LAST_SEARCH.lock().unwrap().clone();
+            if let Some(state) = last {
+                let result = search_box(&token, &state.query, state.next_offset).await?;
+                let footer = format!(
+                    "{}-{}/{} 件{}",
+                    result.offset + 1,
+                    result.next_offset,
+                    result.total_count,
+                    if result.has_more { "（Enter で続き）" } else { "（すべて表示）" }
+                );
+                reply = format!("{}\n\n{}", result.reply, footer);
+                has_more = result.has_more;
+                next_state = Some(SearchState {
+                    query: state.query,
+                    next_offset: result.next_offset,
+                });
+            } else {
+                reply = "先に search を実行してください。".to_string();
+            }
+        }
+        "link" => {
+            let parts: Vec<&str> = arg.split_whitespace().collect();
+            if parts.len() != 2 {
+                reply = "使用方法: link <file|folder> <id>".to_string();
+            } else if parts[0] != "file" && parts[0] != "folder" {
+                reply = "type には file または folder を指定してください。".to_string();
+            } else {
+                let url = format!("https://api.box.com/2.0/{}/{}", parts[0], parts[1]);
+                let payload = r#"{"shared_link": {"access": "open"}}"#;
+                let body = box_api_put(&token, &url, payload).await?;
+                let item: BoxItem = serde_json::from_str(&body)?;
+                reply = if let Some(link) = item.shared_link {
+                    format!("{} の共有リンク: {}", item.name, link.url)
+                } else {
+                    "共有リンクを取得できませんでした。".to_string()
+                };
+            }
+        }
+        _ => {
+            let query = text.trim();
+            if query.is_empty() {
+                reply = "検索語を入力してください。".to_string();
+            } else {
+                let result = search_box(&token, query, 0).await?;
+                let footer = format!(
+                    "{}-{}/{} 件{}",
+                    result.offset + 1,
+                    result.next_offset,
+                    result.total_count,
+                    if result.has_more { "（Enter で続き）" } else { "（すべて表示）" }
+                );
+                reply = format!("{}\n\n{}", result.reply, footer);
+                has_more = result.has_more;
+                next_state = Some(SearchState {
+                    query: query.to_string(),
+                    next_offset: result.next_offset,
+                });
+            }
+        }
+    }
 
-    Ok(McpChatResponse { reply })
+    if let Some(state) = next_state {
+        *LAST_SEARCH.lock().unwrap() = Some(state);
+    }
+
+    Ok(BoxApiChatResponse { reply, has_more })
 }
 
 #[tauri::command]
-async fn mcp_chat(text: String) -> Result<McpChatResponse, String> {
-    run_mcp_chat(text).await.map_err(|e| e.to_string())
+async fn box_api_chat(text: String) -> Result<BoxApiChatResponse, String> {
+    run_box_api_chat(text).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -591,6 +790,55 @@ async fn process_photos(
 #[tauri::command]
 async fn box_api_get_cmd(token: String, url: String) -> Result<String, String> {
     box_api_get(&token, &url).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn mcp_list_tools() -> Result<String, String> {
+    let config = load_config();
+    let url = config.mcp_server_url.as_deref().ok_or("MCP サーバーURLが設定されていません")?;
+    let client = Client::new();
+    let mut req = client
+        .post(url)
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {}
+        }));
+    if let Some(token) = config.mcp_connection_token.as_deref() {
+        req = req.header(header::AUTHORIZATION, format!("Bearer {}", token));
+    }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    Ok(text)
+}
+
+#[tauri::command]
+async fn mcp_call_tool(name: String, arguments: String) -> Result<String, String> {
+    let config = load_config();
+    let url = config.mcp_server_url.as_deref().ok_or("MCP サーバーURLが設定されていません")?;
+    let args: serde_json::Value = serde_json::from_str(&arguments)
+        .map_err(|e| format!("引数JSONのパースエラー: {}", e))?;
+    let client = Client::new();
+    let mut req = client
+        .post(url)
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": name,
+                "arguments": args
+            }
+        }));
+    if let Some(token) = config.mcp_connection_token.as_deref() {
+        req = req.header(header::AUTHORIZATION, format!("Bearer {}", token));
+    }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    Ok(text)
 }
 
 #[derive(Serialize)]
@@ -698,6 +946,11 @@ async fn box_oauth_logout() -> Result<(), String> {
     save_config(&config).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn open_url(url: String) -> Result<(), String> {
+    opener::open_browser(&url).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -705,12 +958,15 @@ pub fn run() {
             load_saved_config,
             save_config_cmd,
             process_photos,
-            mcp_chat,
+            box_api_chat,
             box_api_get_cmd,
+            mcp_list_tools,
+            mcp_call_tool,
             box_oauth_login,
             developer_token_login,
             box_oauth_status,
-            box_oauth_logout
+            box_oauth_logout,
+            open_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
