@@ -275,7 +275,9 @@ function compareVersion(a, b) {
 async function loadVersion() {
   try {
     const health = await apiGet("/health");
-    $("current-version").textContent = health.version ?? "-";
+    const version = health.version ?? "-";
+    $("current-version").textContent = version;
+    $("header-version").textContent = version;
     await checkUpdate(health.version);
   } catch (err) {
     $("current-version").textContent = "-";
