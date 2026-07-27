@@ -147,6 +147,15 @@
             <div id="server-status-text"></div>
             <p class="chat-intro">停止は KASUGAI 本体からの再起動または手動実行で復帰します。ポート設定は keyring に保存され、次回起動時に反映されます（環境変数 <code>KASUGAI_BOX_PORT</code> で上書き可）。</p>
           </div>
+          <hr />
+          <h3>バージョン情報</h3>
+          <div class="form">
+            <p>現在のバージョン: <code id="current-version">-</code></p>
+            <p>最新バージョン: <code id="latest-version">-</code> <span id="update-status"></span></p>
+            <button id="check-update" type="button">更新を確認</button>
+            <a id="download-update" href="#" target="_blank" hidden><button type="button">最新版をダウンロード</button></a>
+            <div id="version-status"></div>
+          </div>
         </div>
       </section>
 

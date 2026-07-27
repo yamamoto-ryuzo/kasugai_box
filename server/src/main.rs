@@ -69,6 +69,15 @@ async fn health() -> Json<serde_json::Value> {
     }))
 }
 
+const LATEST_JSON_URL: &str = "https://yamamoto-ryuzo.github.io/kasugai_box/download/latest.json";
+
+async fn update_latest() -> ApiResult<Json<serde_json::Value>> {
+    let response = reqwest::get(LATEST_JSON_URL).await?.error_for_status()?;
+    let text = response.text().await?;
+    let data: serde_json::Value = serde_json::from_str(&text)?;
+    Ok(Json(data))
+}
+
 async fn get_config() -> Json<ConfigView> {
     Json(ConfigView::from(&load_config()))
 }
@@ -273,6 +282,7 @@ async fn main() {
         .route("/main.js", get(serve_main_js))
         .route("/styles.css", get(serve_styles_css))
         .route("/health", get(health))
+        .route("/api/v1/update/latest", get(update_latest))
         .route("/openapi.yaml", get(serve_openapi))
         .route("/api/v1/config", get(get_config).post(post_config))
         .route("/api/v1/auth/box/login", post(auth_login))

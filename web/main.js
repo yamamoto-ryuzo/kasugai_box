@@ -214,6 +214,63 @@ async function run() {
   }
 }
 
+function compareVersion(a, b) {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0;
+    const nb = pb[i] || 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
+}
+
+async function loadVersion() {
+  try {
+    const health = await apiGet("/health");
+    $("current-version").textContent = health.version ?? "-";
+    await checkUpdate(health.version);
+  } catch (err) {
+    $("current-version").textContent = "-";
+    $("version-status").textContent = `バージョン取得エラー: ${err.message}`;
+  }
+}
+
+async function checkUpdate(currentVersion) {
+  $("version-status").textContent = "最新情報を確認中...";
+  $("download-update").hidden = true;
+  try {
+    const latest = await apiGet("/api/v1/update/latest");
+    const latestVersion = latest.version ?? "-";
+    const url = latest.platforms?.["windows-x86_64"]?.url;
+    $("latest-version").textContent = latestVersion;
+    if (!currentVersion || currentVersion === "-") {
+      $("update-status").textContent = "";
+      $("version-status").textContent = "現在のバージョンが取得できません";
+      return;
+    }
+    const cmp = compareVersion(currentVersion, latestVersion);
+    if (cmp < 0) {
+      $("update-status").textContent = "（新しいバージョンがあります）";
+      $("version-status").textContent = "更新が利用可能です";
+      if (url) {
+        $("download-update").href = url;
+        $("download-update").hidden = false;
+      }
+    } else if (cmp === 0) {
+      $("update-status").textContent = "（最新です）";
+      $("version-status").textContent = "";
+    } else {
+      $("update-status").textContent = "（現在のバージョンの方が新しいです）";
+      $("version-status").textContent = "";
+    }
+  } catch (err) {
+    $("latest-version").textContent = "-";
+    $("version-status").textContent = `更新確認エラー: ${err.message}`;
+  }
+}
+
 function initTabs() {
   const buttons = document.querySelectorAll(".tab-btn");
   const panels = document.querySelectorAll(".tab-panel");
@@ -322,6 +379,7 @@ async function callMcpTool() {
 
 window.addEventListener("DOMContentLoaded", () => {
   loadSavedConfig();
+  loadVersion();
   initTabs();
   $("run-btn").addEventListener("click", run);
   $("chat-send").addEventListener("click", sendChat);
@@ -336,4 +394,8 @@ window.addEventListener("DOMContentLoaded", () => {
   $("mcp-list-tools")?.addEventListener("click", listMcpTools);
   $("mcp-call-tool")?.addEventListener("click", callMcpTool);
   $("server-stop")?.addEventListener("click", stopServer);
+  $("check-update")?.addEventListener("click", () => {
+    const current = $("current-version").textContent;
+    checkUpdate(current);
+  });
 });
