@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """kasugai_box API sidecar ランチャー"""
 import argparse
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -35,6 +36,35 @@ def build_release():
     _zip_to_download()
 
 
+def _find_makensis():
+    """makensis.exe のパスを探す"""
+    exe = shutil.which("makensis") or shutil.which("makensis.exe")
+    if exe:
+        return Path(exe)
+    for candidate in [
+        Path(r"C:\Program Files\NSIS\makensis.exe"),
+        Path(r"C:\Program Files (x86)\NSIS\makensis.exe"),
+    ]:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def build_installer():
+    """NSIS インストーラーを作成する"""
+    makensis = _find_makensis()
+    if makensis is None:
+        print("makensis.exe が見つかりません。NSIS をインストールして PATH を通してください。", file=sys.stderr)
+        print("https://nsis.sourceforge.io/Download", file=sys.stderr)
+        sys.exit(1)
+    nsi = ROOT / "installer" / "kasugai_box.nsi"
+    if not nsi.exists():
+        print(f"インストーラースクリプトが見つかりません: {nsi}", file=sys.stderr)
+        sys.exit(1)
+    subprocess.run([str(makensis), str(nsi)], cwd=ROOT)
+    print(f"インストーラーを作成しました: {DOWNLOAD_DIR / 'kasugai_box_setup.exe'}")
+
+
 def run_release():
     """リリースビルド済み実行ファイルを起動"""
     exe = TARGET_EXE
@@ -60,9 +90,17 @@ def main():
         action="store_true",
         help="リリースビルド済みの kasugai_box.exe を起動（未指定時は cargo run）",
     )
+    parser.add_argument(
+        "--installer",
+        action="store_true",
+        help="リリースビルド後に NSIS インストーラー (download/kasugai_box_setup.exe) を作成",
+    )
     args = parser.parse_args()
 
-    if args.build:
+    if args.installer:
+        build_release()
+        build_installer()
+    elif args.build:
         build_release()
     elif args.release:
         run_release()
