@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.0.3] - 2026-07-27
+
+Windows 向け配布を整備し、ブラウザ起動対応を追加しました。
+
+### Added
+- Windows 用 NSIS インストーラー (`installer/kasugai_box.nsi`) を追加
+- EXE にマルチサイズアイコンを埋め込み (`server/assets/icon.ico`)
+- 起動時に既定ブラウザで `http://127.0.0.1:{port}/ui` を開く機能
+- 同一ポートでの重複起動防止（既存インスタンスがあればブラウザを開いて終了）
+- スタートメニュー・デスクトップへの `--open-browser` ショートカット作成機能
+- インストーラー・ショートカット作成仕様書 (`AGENTS.md`) を追加
+- `run.py` から NSIS インストーラーをビルド可能に
+
+### Changed
+- `README.md` / `index.md` のダウンロード案内を整理し `AGENTS.md` へリンク
+
 ## [3.0.0] - 2026-07-26
 
 メジャーアップデート。Tauri v2 デスクトップアプリから **API サイドカー（HTTP/REST/MCP サーバー）** へ再構成しました。`kasugai_box` は `127.0.0.1:8410` で待ち受ける独立したサイドカーとなり、KASUGAI 本体は WebView または MCP クライアントとして利用します。
