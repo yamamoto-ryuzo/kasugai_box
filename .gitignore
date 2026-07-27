@@ -4,9 +4,6 @@ config.json
 *.gpkg
 *.gpkg.png
 
-# リリース用ZIPはGitHub Actions経由でPagesにデプロイする
-download/kasugai_box.zip
-
 # Node
 node_modules/
 /dist
