@@ -37,8 +37,9 @@ KASUGAI 本体は **ブラウザ/タブを操作するため** の Tauri アプ�
 
 | 種別 | 入手先 | 備考 |
 | :--- | :--- | :--- |
-| リリースビルド済みバイナリ | [download/kasugai_box.zip](./download/kasugai_box.zip) | `python run.py -B` でビルド・配置されます。ZIP 内の `kasugai_box.exe` を展開して利用してください |
-| ソースコード | [GitHub リポジトリ](https://github.com/yamamoto-ryuzo/kasugai_box) | `python run.py -B`（または `cargo build --release`）でビルド可能 |
+| リリースビルド済みバイナリ | [download/kasugai_box.zip](./download/kasugai_box.zip) | `python run.py b` でビルド・配置されます。ZIP 内の `kasugai_box.exe` を展開して利用してください |
+| NSIS インストーラー | [download/kasugai_box_setup.exe](./download/kasugai_box_setup.exe) | `python run.py b` でビルドされます。実行すると Windows のスタートメニューに登録され、終了ページで「Run kasugai」と「Create desktop shortcut」が選べます |
+| ソースコード | [GitHub リポジトリ](https://github.com/yamamoto-ryuzo/kasugai_box) | `python run.py b`（または `cargo build --release`）でビルド可能 |
 
 ---
 

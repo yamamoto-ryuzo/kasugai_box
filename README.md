@@ -13,7 +13,8 @@ KASUGAI 本体は **ブラウザ/タブをいろいろ操作するため** の T
 
 ## ダウンロード
 
-- **[download/kasugai_box.zip](./download/kasugai_box.zip)** — `python run.py -B` でビルド・配置されます（ZIP 内の `kasugai_box.exe` を展開して利用してください）
+- **[download/kasugai_box.zip](./download/kasugai_box.zip)** — `python run.py b` でビルド・配置されます（ZIP 内の `kasugai_box.exe` を展開して利用してください）
+- **[download/kasugai_box_setup.exe](./download/kasugai_box_setup.exe)** — `python run.py b` でビルドされる NSIS インストーラーです。起動してウィザードに従うと Windows のスタートメニューに登録されます
 
 ## インストール
 
