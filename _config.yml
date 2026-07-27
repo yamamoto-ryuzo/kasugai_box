@@ -1,4 +1,4 @@
 title: kasugai_box
-description: KASUGAI 用 API サイドカー（Box 写真 EXIF 抽出 / GeoJSON / CSV / MCP）
+description: KASUGAI 用 API サイドカー（Box 写真メタデータ取得 / GeoJSON / CSV / MCP）
 show_downloads: true
 theme: minima

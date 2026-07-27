@@ -5,7 +5,7 @@ info:
     KASUGAI 用 API サイドカー。Box フォルダ内画像の EXIF 抽出（CSV/GeoJSON 出力）、
     Box API チャット、Box OAuth ログインを HTTP/REST で提供します。
     AI エージェント向けには POST /mcp（Streamable HTTP）で同じ機能をツールとして提供します。
-  version: 3.0.4
+  version: 3.0.5
 servers:
   - url: http://127.0.0.1:8410
     description: ローカルサイドカー（既定ポート。KASUGAI_BOX_PORT で変更可）
@@ -135,6 +135,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+  /api/v1/open-folder:
+    post:
+      summary: 指定パスのフォルダを OS のファイルマネージャーで開く
+      operationId: openFolder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string, description: 開くフォルダまたはファイルの絶対パス }
+      responses:
+        "200":
+          description: 完了メッセージ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
   /api/v1/photos/process:
     post:
       summary: Box フォルダ内画像の EXIF 抽出ジョブを開始（長時間処理）
@@ -147,7 +167,7 @@ paths:
               type: object
               required: [folderUrl]
               properties:
-                folderUrl: { type: string, description: Box フォルダ URL または ID }
+                folderUrl: { type: string, description: "Box フォルダ URL または ID。複数指定時は改行またはカンマ区切り" }
                 outputDir: { type: string, description: 出力フォルダ（既定 c:/kasugai/box/photo。絶対パスまたは相対パス） }
       responses:
         "202":
@@ -160,6 +180,24 @@ paths:
                   jobId: { type: string }
                   status: { type: string, example: queued }
         "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/jobs/{id}/cancel:
+    post:
+      summary: 指定ジョブに停止要求を送信する
+      operationId: cancelJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 停止要求を受け付けました
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "404":
           $ref: "#/components/responses/Error"
   /api/v1/jobs/{id}:
     get:
@@ -267,6 +305,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
+  /api/v1/server/restart:
+    post:
+      summary: サイドカーを起動
+      description: >-
+        現在の EXE と同じパスから新しいプロセスを起動します。
+        既存インスタンスが動作中の場合は新プロセスが起動して引き継ぎます。
+      operationId: restartServer
+      responses:
+        "200":
+          description: 再起動開始メッセージ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
   /mcp:
     post:
       summary: kasugai_box 自身の MCP サーバー（JSON-RPC 2.0 / Streamable HTTP）
@@ -336,6 +388,7 @@ components:
           type: string
           enum: [queued, running, succeeded, failed]
         progress: { type: integer, minimum: 0, maximum: 100 }
+        message: { type: string, nullable: true, description: 現在の処理内容 }
         result:
           $ref: "#/components/schemas/ProcessResult"
         error: { type: string, nullable: true }
@@ -348,6 +401,7 @@ components:
             $ref: "#/components/schemas/PhotoRecord"
         csvPath: { type: string }
         geojsonPath: { type: string, nullable: true }
+        outputDir: { type: string, description: 解決後の出力フォルダ絶対パス }
         message: { type: string }
     PhotoRecord:
       type: object

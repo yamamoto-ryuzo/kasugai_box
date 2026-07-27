@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use uuid::Uuid;
 
@@ -19,6 +19,8 @@ pub struct JobInfo {
     pub status: JobStatus,
     pub progress: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -27,6 +29,7 @@ pub struct JobInfo {
 #[derive(Default)]
 pub struct Jobs {
     inner: Mutex<HashMap<String, JobInfo>>,
+    cancel: Mutex<HashSet<String>>,
 }
 
 impl Jobs {
@@ -36,6 +39,7 @@ impl Jobs {
             job_id: id.clone(),
             status: JobStatus::Queued,
             progress: 0,
+            message: None,
             result: None,
             error: None,
         };
@@ -49,25 +53,42 @@ impl Jobs {
         }
     }
 
-    pub fn set_progress(&self, id: &str, progress: u8) {
+    pub fn set_progress(&self, id: &str, progress: u8, message: Option<String>) {
         if let Some(job) = self.inner.lock().unwrap().get_mut(id) {
             job.progress = progress.min(100);
+            job.message = message;
         }
     }
 
     pub fn complete(&self, id: &str, result: serde_json::Value) {
-        if let Some(job) = self.inner.lock().unwrap().get_mut(id) {
-            job.status = JobStatus::Succeeded;
-            job.progress = 100;
-            job.result = Some(result);
+        {
+            let mut inner = self.inner.lock().unwrap();
+            if let Some(job) = inner.get_mut(id) {
+                job.status = JobStatus::Succeeded;
+                job.progress = 100;
+                job.result = Some(result);
+            }
         }
+        self.cancel.lock().unwrap().remove(id);
     }
 
     pub fn fail(&self, id: &str, error: String) {
-        if let Some(job) = self.inner.lock().unwrap().get_mut(id) {
-            job.status = JobStatus::Failed;
-            job.error = Some(error);
+        {
+            let mut inner = self.inner.lock().unwrap();
+            if let Some(job) = inner.get_mut(id) {
+                job.status = JobStatus::Failed;
+                job.error = Some(error);
+            }
         }
+        self.cancel.lock().unwrap().remove(id);
+    }
+
+    pub fn mark_cancelled(&self, id: &str) {
+        self.cancel.lock().unwrap().insert(id.to_string());
+    }
+
+    pub fn is_cancelled(&self, id: &str) -> bool {
+        self.cancel.lock().unwrap().contains(id)
     }
 
     pub fn get(&self, id: &str) -> Option<JobInfo> {

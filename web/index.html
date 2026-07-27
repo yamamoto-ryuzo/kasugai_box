@@ -22,17 +22,19 @@
       </div>
 
       <section id="tab-photo" class="tab-panel active">
-        <p>Boxフォルダ内の画像からEXIFの位置情報を抽出し、CSV・GeoJSONを出力します。</p>
+        <p>Box サーバー側の埋め込みメタデータから画像の位置情報を取得し、CSV・GeoJSONを出力します。位置情報がない場合は空欄になります。</p>
         <div class="form">
           <label>
             フォルダURL
-            <input type="text" id="folder-url" placeholder="https://app.box.com/folder/123456" />
+            <textarea id="folder-url" rows="8" placeholder="https://app.box.com/folder/123456&#10;複数指定時は改行またはカンマ区切り"></textarea>
           </label>
           <label>
             出力フォルダ名
             <input type="text" id="output-dir" value="c:/kasugai/box/photo" />
           </label>
+          <button id="open-output-btn" type="button">出力フォルダを開く</button>
           <button id="run-btn" type="button">実行</button>
+          <button id="stop-btn" type="button" disabled>停止</button>
         </div>
 
         <div id="status"></div>
@@ -166,9 +168,10 @@
           <h2>サイドカー管理</h2>
           <div class="form">
             <p>実行中ポート: <code id="server-port">-</code> / バインド: <code>127.0.0.1</code></p>
+            <button id="server-restart" type="button">kasugai_box を再起動</button>
             <button id="server-stop" type="button">kasugai_box を停止</button>
             <div id="server-status-text"></div>
-            <p class="chat-intro">停止は KASUGAI 本体からの再起動または手動実行で復帰します。</p>
+            <p class="chat-intro">「再起動」ボタンを押すと、現在の EXE と同じバイナリを新しいプロセスとして起動します。既存インスタンスがあれば新プロセスが起動して UI を開きます。</p>
           </div>
         </section>
 

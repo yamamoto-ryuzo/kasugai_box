@@ -1,7 +1,7 @@
 {
-  "version": "3.0.4",
-  "notes": "kasugai_box バージョン 3.0.3\n\n- Windows 向け NSIS インストーラー対応\n- ブラウザ起動・重複起動防止\n- AGENTS.md 追加",
-  "pub_date": "2026-07-27T13:00:00Z",
+  "version": "3.0.5",
+  "notes": "kasugai_box バージョン 3.0.5\n\n- Photo タブの利便性向上\n- 長時間処理の停止機能\n- 複数 Box フォルダ URL の同時指定\n- 出力フォルダを開く API",
+  "pub_date": "2026-07-28T13:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "",

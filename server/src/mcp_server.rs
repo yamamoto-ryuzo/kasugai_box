@@ -79,7 +79,7 @@ fn tools_definition() -> Value {
         },
         {
             "name": "photos_process",
-            "description": "Box フォルダ内の画像の EXIF から緯度経度・撮影日を抽出し CSV/GeoJSON を出力するジョブを開始します。job_status で進捗を確認してください。",
+            "description": "Box フォルダ内の画像のサーバー側埋め込みメタデータから緯度経度・撮影日を取得し CSV/GeoJSON を出力するジョブを開始します。job_status で進捗を確認してください。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -165,7 +165,7 @@ async fn call_tool(state: &Arc<AppState>, name: &str, args: &Value) -> Result<St
                 .and_then(Value::as_str)
                 .unwrap_or("c:/kasugai/box/photo")
                 .to_string();
-            let job_id = crate::start_photos_job(state.clone(), folder_url, output_dir)
+            let job_id = crate::start_photos_job(state.clone(), vec![folder_url], output_dir)
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(json!({ "jobId": job_id, "status": "queued" }).to_string())

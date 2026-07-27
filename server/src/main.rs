@@ -210,19 +210,49 @@ async fn auth_logout() -> ApiResult<Json<serde_json::Value>> {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct OpenFolderRequest {
+    path: String,
+}
+
+async fn open_folder(Json(req): Json<OpenFolderRequest>) -> ApiResult<Json<serde_json::Value>> {
+    let path = std::path::PathBuf::from(req.path);
+    if !path.is_absolute() {
+        return Err(ApiError::bad_request("絶対パスを指定してください"));
+    }
+    let target = if path.is_dir() {
+        path
+    } else {
+        path.parent().map(|p| p.to_path_buf()).unwrap_or(path)
+    };
+    if !target.exists() {
+        return Err(ApiError::bad_request("指定されたパスが存在しません"));
+    }
+    opener::open(&target).map_err(ApiError::from)?;
+    Ok(Json(json!({ "message": "フォルダを開きました" })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PhotosProcessRequest {
     folder_url: String,
     output_dir: Option<String>,
 }
 
+fn parse_folder_urls(s: &str) -> Vec<String> {
+    s.split(|c: char| c == '\n' || c == ',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 /// 写真処理ジョブを開始し、ジョブ ID を返す（REST・MCP 共用）。
 pub async fn start_photos_job(
     state: Arc<AppState>,
-    folder_url: String,
+    folder_urls: Vec<String>,
     output_dir: String,
 ) -> Result<String> {
     let mut config = load_config();
-    config.folder_url = Some(folder_url.clone());
+    config.folder_url = Some(folder_urls.join("\n"));
     save_config(&config)?;
     let token = ensure_access_token(&mut config).await?;
 
@@ -232,8 +262,9 @@ pub async fn start_photos_job(
         state.jobs.set_running(&job_id_clone);
         let jobs = &state.jobs;
         let progress_id = job_id_clone.clone();
-        let result = photos::run_process(token, folder_url, output_dir, |p| {
-            jobs.set_progress(&progress_id, p);
+        let result = photos::run_process(token, folder_urls, output_dir, |p, msg| {
+            jobs.set_progress(&progress_id, p, Some(msg));
+            !jobs.is_cancelled(&progress_id)
         })
         .await;
         match result {
@@ -251,14 +282,15 @@ async fn photos_process(
     State(state): State<Arc<AppState>>,
     Json(req): Json<PhotosProcessRequest>,
 ) -> ApiResult<Response> {
-    if req.folder_url.trim().is_empty() {
+    let folder_urls = parse_folder_urls(&req.folder_url);
+    if folder_urls.is_empty() {
         return Err(ApiError::bad_request("folderUrl を入力してください"));
     }
     let output_dir = req
         .output_dir
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "c:/kasugai/box/photo".to_string());
-    let job_id = start_photos_job(state, req.folder_url.trim().to_string(), output_dir).await?;
+    let job_id = start_photos_job(state, folder_urls, output_dir).await?;
     Ok((
         StatusCode::ACCEPTED,
         Json(json!({ "jobId": job_id, "status": "queued" })),
@@ -275,6 +307,17 @@ async fn get_job(
         .get(&id)
         .map(Json)
         .ok_or_else(|| ApiError::not_found("ジョブが見つかりません"))
+}
+
+async fn cancel_job(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if state.jobs.get(&id).is_none() {
+        return Err(ApiError::not_found("ジョブが見つかりません"));
+    }
+    state.jobs.mark_cancelled(&id);
+    Ok(Json(json!({ "message": "停止要求を受け付けました" })))
 }
 
 #[derive(Deserialize)]
@@ -342,6 +385,18 @@ async fn server_stop(State(state): State<Arc<AppState>>) -> Json<serde_json::Val
     Json(json!({ "message": "kasugai_box を停止します" }))
 }
 
+async fn server_restart(State(_state): State<Arc<AppState>>) -> ApiResult<Json<serde_json::Value>> {
+    // 現在の EXE と同じパスから新しいプロセスを起動する。
+    // 新プロセスは重複起動防止ロジックで既存インスタンスを停止し、--open-browser で UI を開く。
+    let current_exe = std::env::current_exe().map_err(ApiError::from)?;
+    tokio::process::Command::new(&current_exe)
+        .arg("--open-browser")
+        .spawn()
+        .map_err(ApiError::from)?;
+
+    Ok(Json(json!({ "message": "kasugai_box を起動しました。新しいプロセスが既存インスタンスを停止します。" })))
+}
+
 #[tokio::main]
 async fn main() {
     let saved_config = load_config();
@@ -373,13 +428,16 @@ async fn main() {
         .route("/api/v1/auth/box/developer-token", post(auth_developer_token))
         .route("/api/v1/auth/box/status", get(auth_status))
         .route("/api/v1/auth/box/logout", post(auth_logout))
+        .route("/api/v1/open-folder", post(open_folder))
         .route("/api/v1/photos/process", post(photos_process))
+        .route("/api/v1/jobs/{id}/cancel", post(cancel_job))
         .route("/api/v1/jobs/{id}", get(get_job))
         .route("/api/v1/box/chat", post(box_chat))
         .route("/api/v1/mcp-client/tools", get(mcp_client_list_tools))
         .route("/api/v1/mcp-client/call", post(mcp_client_call_tool))
         .route("/api/v1/server/status", get(server_status))
         .route("/api/v1/server/stop", post(server_stop))
+        .route("/api/v1/server/restart", post(server_restart))
         .route("/mcp", post(mcp_server::handle))
         .with_state(state);
 
@@ -387,23 +445,34 @@ async fn main() {
 
     // 127.0.0.1 固定（方針書 1.2：0.0.0.0 バインド禁止）
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    let listener = match tokio::net::TcpListener::bind(addr).await {
-        Ok(l) => l,
-        Err(e) => {
-            // 既に起動済み（ポート使用中）の場合は、多重起動せず既存インスタンスの UI をブラウザで開いて終了する
-            let health_url = format!("http://127.0.0.1:{}/health", port);
-            if reqwest::get(&health_url)
-                .await
-                .map(|r| r.status().is_success())
-                .unwrap_or(false)
-            {
-                let _ = opener::open(format!("http://127.0.0.1:{}/ui", port));
-                println!("kasugai_box は既にポート {} で起動しています。ブラウザで UI を開きました。", port);
-                return;
+    let listener = 'bind: loop {
+        match tokio::net::TcpListener::bind(addr).await {
+            Ok(l) => break 'bind l,
+            Err(e) => {
+                // 既に起動済み（ポート使用中）の場合は、古いインスタンスを停止してポートを確保する
+                let health_url = format!("http://127.0.0.1:{}/health", port);
+                let existing = reqwest::get(&health_url)
+                    .await
+                    .map(|r| r.status().is_success())
+                    .unwrap_or(false);
+                if !existing {
+                    eprintln!("kasugai_box: ポート {} で起動できません: {}", port, e);
+                    eprintln!("環境変数 KASUGAI_BOX_PORT で別のポートを指定してください。");
+                    std::process::exit(1);
+                }
+                println!("kasugai_box は既にポート {} で起動しています。古いインスタンスを停止します。", port);
+                let stop_url = format!("http://127.0.0.1:{}/api/v1/server/stop", port);
+                let _ = reqwest::Client::new().post(&stop_url).send().await;
+                for _ in 1..=60 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    if let Ok(l) = tokio::net::TcpListener::bind(addr).await {
+                        println!("kasugai_box: ポート {} を確保しました。新しいインスタンスを起動します。", port);
+                        break 'bind l;
+                    }
+                }
+                eprintln!("kasugai_box: ポート {} の解放を待ちましたが、起動できません: {}", port, e);
+                std::process::exit(1);
             }
-            eprintln!("kasugai_box: ポート {} で起動できません: {}", port, e);
-            eprintln!("環境変数 KASUGAI_BOX_PORT で別のポートを指定してください。");
-            std::process::exit(1);
         }
     };
     println!(

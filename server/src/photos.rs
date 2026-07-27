@@ -1,14 +1,14 @@
 use anyhow::{Context, Result};
-use exif::{In, Reader, Tag, Value};
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use regex::Regex;
 use reqwest::{header, Client};
 use serde::Serialize;
+use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::box_api::{BoxFolderItems, BoxItem};
+use crate::box_api::{fetch_embedded_metadata, BoxFolderItems, BoxItem};
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -27,6 +27,7 @@ pub struct ProcessResult {
     pub records: Vec<PhotoRecord>,
     pub csv_path: String,
     pub geojson_path: Option<String>,
+    pub output_dir: String,
     pub message: String,
 }
 
@@ -50,62 +51,133 @@ fn extract_folder_id(url: &str) -> String {
     }
 }
 
-fn get_exif_location_and_datetime(bytes: &[u8]) -> (Option<f64>, Option<f64>, Option<String>) {
-    let mut cursor = std::io::Cursor::new(bytes);
-    let reader = Reader::new();
-    let exif = match reader.read_from_container(&mut cursor) {
-        Ok(e) => e,
-        Err(_) => return (None, None, None),
-    };
+fn parse_coordinate(s: &str) -> Option<f64> {
+    let dms_re = Regex::new(r#"(\d+(?:\.\d+)?)\s*deg\s*(\d+(?:\.\d+)?)\s*['′]\s*([\d.]+)\s*(?:"|''|″)?\s*([NSEW])"#).unwrap();
+    if let Some(caps) = dms_re.captures(s) {
+        let d: f64 = caps[1].parse().ok()?;
+        let m: f64 = caps[2].parse().ok()?;
+        let sec: f64 = caps[3].parse().ok()?;
+        let mut deg = d + m / 60.0 + sec / 3600.0;
+        if &caps[4] == "S" || &caps[4] == "W" {
+            deg = -deg;
+        }
+        return Some(deg);
+    }
 
-    let get_coord = |tag, ref_tag| -> Option<f64> {
-        let field = exif.get_field(tag, In::PRIMARY)?;
-        let ref_field = exif.get_field(ref_tag, In::PRIMARY)?;
+    let dec_re = Regex::new(r"^([+-]?\d+(?:\.\d+)?)(?:\s*([NSEW]))?$").unwrap();
+    if let Some(caps) = dec_re.captures(s.trim()) {
+        let mut v: f64 = caps[1].parse().ok()?;
+        if let Some(h) = caps.get(2).map(|m| m.as_str()) {
+            if h == "S" || h == "W" {
+                v = -v.abs();
+            }
+        }
+        return Some(v);
+    }
 
-        let coords = match &field.value {
-            Value::Rational(r) if r.len() == 3 => r,
-            _ => return None,
-        };
+    None
+}
 
-        let d = coords[0].to_f64();
-        let m = coords[1].to_f64();
-        let s = coords[2].to_f64();
-        let mut deg = d + (m / 60.0) + (s / 3600.0);
+fn extract_embedded_location_and_datetime(
+    metadata: &Value,
+) -> (Option<f64>, Option<f64>, Option<String>) {
+    let fallback = Value::Null;
+    let root = metadata
+        .as_array()
+        .and_then(|a| a.first())
+        .unwrap_or(&fallback);
 
-        if let Value::Ascii(arr) = &ref_field.value {
-            if let Some(dir_arr) = arr.first() {
-                if let Some(dir) = dir_arr.first() {
-                    if *dir == b'S' || *dir == b'W' {
-                        deg = -deg;
+    let mut lat = None;
+    let mut lon = None;
+
+    if let Some(root_obj) = root.as_object() {
+        'outer: for group in ["Composite", "EXIF", "BoxNormalized"] {
+            if let Some(obj) = root_obj.get(group).and_then(Value::as_object) {
+                if let Some(pos) = obj.get("GPSPosition").and_then(Value::as_str) {
+                    let parts: Vec<&str> = pos.split(',').collect();
+                    if parts.len() == 2 {
+                        if let (Some(la), Some(lo)) =
+                            (parse_coordinate(parts[0]), parse_coordinate(parts[1]))
+                        {
+                            lat = Some(la);
+                            lon = Some(lo);
+                            break 'outer;
+                        }
+                    }
+                }
+
+                if let (Some(la), Some(lo)) = (
+                    obj.get("GPSLatitude").and_then(Value::as_str),
+                    obj.get("GPSLongitude").and_then(Value::as_str),
+                ) {
+                    if let (Some(mut la), Some(mut lo)) =
+                        (parse_coordinate(la), parse_coordinate(lo))
+                    {
+                        if group == "EXIF" {
+                            if let Some(lat_ref) =
+                                obj.get("GPSLatitudeRef").and_then(Value::as_str)
+                            {
+                                if lat_ref == "S" {
+                                    la = -la.abs();
+                                }
+                            }
+                            if let Some(lon_ref) =
+                                obj.get("GPSLongitudeRef").and_then(Value::as_str)
+                            {
+                                if lon_ref == "W" {
+                                    lo = -lo.abs();
+                                }
+                            }
+                        }
+                        lat = Some(la);
+                        lon = Some(lo);
+                        break 'outer;
                     }
                 }
             }
         }
-        Some(deg)
-    };
+    }
 
-    let lat = get_coord(Tag::GPSLatitude, Tag::GPSLatitudeRef);
-    let lon = get_coord(Tag::GPSLongitude, Tag::GPSLongitudeRef);
-
-    let date_taken = exif
-        .get_field(Tag::DateTimeOriginal, In::PRIMARY)
-        .or_else(|| exif.get_field(Tag::DateTime, In::PRIMARY))
-        .map(|f| f.display_value().with_unit(&exif).to_string());
+    let date_taken = root.as_object().and_then(|root_obj| {
+        for group in ["EXIF", "Composite"] {
+            if let Some(obj) = root_obj.get(group).and_then(Value::as_object) {
+                for key in ["DateTimeOriginal", "CreateDate", "DateTime", "DateTimeDigitized"] {
+                    if let Some(v) = obj.get(key).and_then(Value::as_str) {
+                        return Some(v.to_string());
+                    }
+                }
+            }
+        }
+        None
+    });
 
     (lat, lon, date_taken)
 }
 
-fn get_image_files_recursive<'a>(
+fn get_image_files_recursive<'a, F>(
     client: &'a Client,
     folder_id: &'a str,
     parent_path: &'a str,
-) -> BoxFuture<'a, Result<Vec<(BoxItem, String)>>> {
+    progress: F,
+) -> BoxFuture<'a, Result<Vec<(BoxItem, String)>>>
+where
+    F: Fn(u8, String) -> bool + Copy + Send + 'a,
+{
     async move {
+        let display_path = if parent_path.is_empty() { "ルート" } else { parent_path };
+        if !progress(1, format!("フォルダを取得中: {}", display_path)) {
+            return Err(anyhow::anyhow!("処理を停止しました"));
+        }
+
         let mut image_files = Vec::new();
         let mut offset = 0;
         let limit = 1000;
 
         loop {
+            if !progress(1, format!("{}件の画像を発見（{}）", image_files.len(), display_path)) {
+                return Err(anyhow::anyhow!("処理を停止しました"));
+            }
+
             let url = format!(
                 "https://api.box.com/2.0/folders/{}/items?limit={}&offset={}&fields=type,id,name",
                 folder_id, limit, offset
@@ -139,7 +211,7 @@ fn get_image_files_recursive<'a>(
                         format!("{}/{}", parent_path, item.name)
                     };
                     let mut sub_files =
-                        get_image_files_recursive(client, &item.id, &current_path).await?;
+                        get_image_files_recursive(client, &item.id, &current_path, progress).await?;
                     image_files.append(&mut sub_files);
                 }
             }
@@ -189,9 +261,9 @@ fn create_geojson(file_path: &Path, records: &[PhotoRecord]) -> Result<()> {
 
 pub async fn run_process(
     token: String,
-    folder_url: String,
+    folder_urls: Vec<String>,
     output_dir: String,
-    progress: impl Fn(u8),
+    progress: impl Fn(u8, String) -> bool + Copy + Send,
 ) -> Result<ProcessResult> {
     let mut headers = header::HeaderMap::new();
     headers.insert(
@@ -200,27 +272,34 @@ pub async fn run_process(
     );
 
     let client = Client::builder().default_headers(headers).build()?;
-    let folder_id = extract_folder_id(&folder_url);
 
-    progress(1);
-    let image_files = get_image_files_recursive(&client, &folder_id, "").await?;
-    progress(5);
+    let folder_count = folder_urls.len();
+    let mut image_files = Vec::new();
+    for (i, folder_url) in folder_urls.iter().enumerate() {
+        if !progress(1, format!("{} / {} フォルダをスキャン中...", i + 1, folder_count)) {
+            return Err(anyhow::anyhow!("処理を停止しました"));
+        }
+        let folder_id = extract_folder_id(folder_url);
+        let mut files = get_image_files_recursive(&client, &folder_id, "", progress).await?;
+        image_files.append(&mut files);
+    }
 
     let total = image_files.len();
+    if !progress(
+        5,
+        format!("{}件の画像ファイルが見つかりました。メタデータを取得中...", total),
+    ) {
+        return Err(anyhow::anyhow!("処理を停止しました"));
+    }
+
     let mut records = Vec::new();
 
     for (index, (file, parent_path)) in image_files.into_iter().enumerate() {
-        let content_url = format!("https://api.box.com/2.0/files/{}/content", file.id);
-
-        let bytes = match client.get(&content_url).send().await {
-            Ok(resp) => match resp.bytes().await {
-                Ok(b) => b.to_vec(),
-                Err(_) => continue,
-            },
-            Err(_) => continue,
+        let (lat, lon, date_taken) = match fetch_embedded_metadata(&token, &file.id).await {
+            Ok(meta) => extract_embedded_location_and_datetime(&meta),
+            Err(_) => (None, None, None),
         };
 
-        let (lat, lon, date_taken) = get_exif_location_and_datetime(&bytes);
         let url = format!("https://app.box.com/file/{}", file.id);
         let full_name = if parent_path.is_empty() {
             file.name.clone()
@@ -238,7 +317,10 @@ pub async fn run_process(
         });
 
         if total > 0 {
-            progress(5 + ((index + 1) * 90 / total) as u8);
+            let p = 5 + ((index + 1) * 90 / total) as u8;
+            if !progress(p, format!("{} / {} 件の画像を処理中...", index + 1, total)) {
+                return Err(anyhow::anyhow!("処理を停止しました"));
+            }
         }
     }
 
@@ -274,12 +356,15 @@ pub async fn run_process(
         format!("{}件の画像を処理しました。位置情報が含まれていませんでした。", records.len())
     };
 
-    progress(100);
+    if !progress(100, "処理を完了しました".into()) {
+        return Err(anyhow::anyhow!("処理を停止しました"));
+    }
 
     Ok(ProcessResult {
         records,
         csv_path: csv_path.to_string_lossy().to_string(),
         geojson_path,
+        output_dir: output.to_string_lossy().to_string(),
         message,
     })
 }

@@ -216,6 +216,116 @@ pub async fn box_api_put(token: &str, url: &str, body: &str) -> Result<String> {
     Ok(text)
 }
 
+#[derive(Deserialize, Debug)]
+struct RepStatus {
+    state: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct RepInfo {
+    url: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct RepContent {
+    url_template: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct RepresentationEntry {
+    representation: String,
+    status: Option<RepStatus>,
+    info: Option<RepInfo>,
+    content: Option<RepContent>,
+}
+
+#[derive(Deserialize, Debug)]
+struct Representations {
+    entries: Vec<RepresentationEntry>,
+}
+
+#[derive(Deserialize, Debug)]
+struct FileRepresentations {
+    representations: Option<Representations>,
+}
+
+/// ファイルの `embedded_metadata` 表現を取得し、JSON 形式の埋め込みメタデータを返す。
+/// Box の ondemand 表現のため、生成が必要な場合は info URL をトリガーしてポーリングする。
+pub async fn fetch_embedded_metadata(token: &str, file_id: &str) -> Result<serde_json::Value> {
+    let url = format!(
+        "https://api.box.com/2.0/files/{}?fields=representations",
+        file_id
+    );
+    let mut headers = header::HeaderMap::new();
+    headers.insert(
+        header::AUTHORIZATION,
+        header::HeaderValue::from_str(&format!("Bearer {}", token))?,
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-rep-hints"),
+        header::HeaderValue::from_static("[embedded_metadata]"),
+    );
+    let client = Client::builder().default_headers(headers).build()?;
+
+    let mut triggered = false;
+    for _ in 0..60 {
+        let resp = client.get(&url).send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Box representation list error {}: {}", status, text));
+        }
+        let file: FileRepresentations = resp.json().await?;
+        let rep = file
+            .representations
+            .as_ref()
+            .and_then(|r| r.entries.iter().find(|e| e.representation == "embedded_metadata"));
+
+        if let Some(rep) = rep {
+            let state = rep
+                .status
+                .as_ref()
+                .and_then(|s| s.state.as_deref())
+                .unwrap_or("none");
+
+            if state == "success" || state == "viewable" {
+                let template = rep
+                    .content
+                    .as_ref()
+                    .and_then(|c| c.url_template.as_ref())
+                    .context("埋め込みメタデータの URL テンプレートがありません")?;
+                let download_url = template.replace("{+asset_path}", "");
+                let meta_resp = client.get(&download_url).send().await?;
+                if !meta_resp.status().is_success() {
+                    let status = meta_resp.status();
+                    let text = meta_resp.text().await.unwrap_or_default();
+                    return Err(anyhow::anyhow!(
+                        "Box embedded metadata download error {}: {}",
+                        status,
+                        text
+                    ));
+                }
+                let bytes = meta_resp.bytes().await?;
+                return serde_json::from_slice(&bytes)
+                    .context("埋め込みメタデータの JSON パースに失敗しました");
+            }
+
+            if state == "none" && !triggered {
+                if let Some(info_url) = rep.info.as_ref().and_then(|i| i.url.as_ref()) {
+                    let _ = client.get(info_url).send().await?;
+                }
+                triggered = true;
+            }
+        } else {
+            return Err(anyhow::anyhow!("embedded_metadata 表現が利用できません"));
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+    }
+
+    Err(anyhow::anyhow!("Box embedded metadata 生成がタイムアウトしました"))
+}
+
 #[derive(Clone)]
 struct SearchState {
     query: String,

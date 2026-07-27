@@ -28,28 +28,39 @@
 以下の動作を `main()` 内に実装します。
 
 - ポートが使用中なら `/health` へアクセスし、既存インスタンスがいるか判定
-- 既存インスタンスがいる場合は、新しいプロセスを起動せず既定ブラウザで UI を開いて即終了
-- ポートが未使用なら通常通りサーバーを起動
-- `--open-browser` フラグが付いていれば、起動後に既定ブラウザで `http://127.0.0.1:{port}/ui` を開く
+- 既存インスタンスがいる場合は、`/api/v1/server/stop` を呼び出して停止し、ポートが解放されるまで待ってから新規インスタンスを起動する
+- 既存インスタンスがなくポートが使用できない場合はエラー終了
+- `--open-browser` フラグが付いていれば、新規起動後に既定ブラウザで `http://127.0.0.1:{port}/ui` を開く
 
 ```rust
 let open_browser = std::env::args().any(|a| a == "--open-browser");
 let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-let listener = match tokio::net::TcpListener::bind(addr).await {
-    Ok(l) => l,
-    Err(e) => {
-        let health_url = format!("http://127.0.0.1:{}/health", port);
-        if reqwest::get(&health_url)
-            .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false)
-        {
-            let _ = opener::open(format!("http://127.0.0.1:{}/ui", port));
-            println!("既にポート {} で起動しています。ブラウザで UI を開きました。", port);
-            return;
+let listener = 'bind: loop {
+    match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => break 'bind l,
+        Err(e) => {
+            let health_url = format!("http://127.0.0.1:{}/health", port);
+            let existing = reqwest::get(&health_url)
+                .await
+                .map(|r| r.status().is_success())
+                .unwrap_or(false);
+            if !existing {
+                eprintln!("ポート {} で起動できません: {}", port, e);
+                std::process::exit(1);
+            }
+            println!("既にポート {} で起動しています。古いインスタンスを停止します。", port);
+            let stop_url = format!("http://127.0.0.1:{}/api/v1/server/stop", port);
+            let _ = reqwest::Client::new().post(&stop_url).send().await;
+            for _ in 1..=60 {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                if let Ok(l) = tokio::net::TcpListener::bind(addr).await {
+                    println!("ポート {} を確保しました。新しいインスタンスを起動します。", port);
+                    break 'bind l;
+                }
+            }
+            eprintln!("ポート {} の解放を待ちましたが、起動できません: {}", port, e);
+            std::process::exit(1);
         }
-        eprintln!("ポート {} で起動できません: {}", port, e);
-        std::process::exit(1);
     }
 };
 ```

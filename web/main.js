@@ -1,5 +1,6 @@
 const $ = (id) => document.getElementById(id);
 let hasMore = false;
+let currentJobId = null;
 const MAX_SEARCH_LIMIT = 200;
 const SAVED_PLACEHOLDER = "保存済み（変更する場合のみ入力）";
 
@@ -55,7 +56,7 @@ async function loadServerStatus() {
 }
 
 async function stopServer() {
-  if (!confirm("kasugai_box を停止しますか？KASUGAI 本体からの再起動が必要になります。")) {
+  if (!confirm("kasugai_box を停止しますか？KASUGAI 本体からの再起動または手動実行で復帰します。")) {
     return;
   }
   $("server-status-text").textContent = "停止しています...";
@@ -63,8 +64,22 @@ async function stopServer() {
     await apiPost("/api/v1/server/stop");
     $("server-status-text").textContent = "停止しました。このタブを閉じてください。";
     $("server-stop").disabled = true;
+    $("server-restart").disabled = true;
   } catch (err) {
     $("server-status-text").textContent = `停止エラー: ${err.message}`;
+  }
+}
+
+async function restartServer() {
+  if (!confirm("kasugai_box を再起動しますか？既存インスタンスがあれば新しいプロセスが起動して UI を開きます。")) {
+    return;
+  }
+  $("server-status-text").textContent = "再起動しています...";
+  try {
+    const result = await apiPost("/api/v1/server/restart");
+    $("server-status-text").textContent = `${result.message} このタブを閉じても構いません。`;
+  } catch (err) {
+    $("server-status-text").textContent = `再起動エラー: ${err.message}`;
   }
 }
 
@@ -181,8 +196,31 @@ async function pollJob(jobId) {
     const job = await apiGet(`/api/v1/jobs/${jobId}`);
     if (job.status === "succeeded") return job.result;
     if (job.status === "failed") throw new Error(job.error || "ジョブが失敗しました");
-    $("status").textContent = `処理中... ${job.progress ?? 0}%`;
+    const base = job.message ?? "処理中...";
+    $("status").textContent = `${base} (${job.progress ?? 0}%)`;
     await sleep(1000);
+  }
+}
+
+async function openOutputFolder(path) {
+  try {
+    await apiPost("/api/v1/open-folder", { path });
+  } catch (err) {
+    const msg = document.createElement("p");
+    msg.textContent = `フォルダを開けませんでした: ${err.message}`;
+    $("status").appendChild(msg);
+  }
+}
+
+async function cancelJob() {
+  if (!currentJobId) {
+    return;
+  }
+  try {
+    await apiPost(`/api/v1/jobs/${currentJobId}/cancel`, {});
+    $("status").textContent = "停止要求を送信しました...";
+  } catch (err) {
+    $("status").textContent = `停止要求に失敗しました: ${err.message}`;
   }
 }
 
@@ -195,12 +233,15 @@ async function run() {
     return;
   }
 
+  currentJobId = null;
   $("run-btn").disabled = true;
+  $("stop-btn").disabled = false;
   $("status").textContent = "処理中...";
   $("results").hidden = true;
 
   try {
     const accepted = await apiPost("/api/v1/photos/process", { folderUrl, outputDir });
+    currentJobId = accepted.jobId;
     const result = await pollJob(accepted.jobId);
     $("status").innerHTML = `
       <p>${escapeHtml(result.message)}</p>
@@ -209,9 +250,13 @@ async function run() {
     `;
     renderRecords(result.records);
   } catch (err) {
-    $("status").textContent = `エラー: ${err.message}`;
+    $("status").textContent = err.message?.includes("停止しました")
+      ? "処理を停止しました"
+      : `エラー: ${err.message}`;
   } finally {
     $("run-btn").disabled = false;
+    $("stop-btn").disabled = true;
+    currentJobId = null;
   }
 }
 
@@ -410,6 +455,10 @@ window.addEventListener("DOMContentLoaded", () => {
   initTabs(".tab-btn", ".tab-panel", "tab", "tab-");
   initTabs(".sub-tab-btn", ".sub-panel", "subtab", "");
   $("run-btn").addEventListener("click", run);
+  $("stop-btn")?.addEventListener("click", cancelJob);
+  $("open-output-btn")?.addEventListener("click", () => {
+    openOutputFolder($("output-dir").value.trim() || "c:/kasugai/box/photo");
+  });
   $("chat-send").addEventListener("click", sendChat);
   $("chat-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendChat();
@@ -422,6 +471,7 @@ window.addEventListener("DOMContentLoaded", () => {
   $("mcp-list-tools")?.addEventListener("click", listMcpTools);
   $("mcp-call-tool")?.addEventListener("click", callMcpTool);
   $("server-stop")?.addEventListener("click", stopServer);
+  $("server-restart")?.addEventListener("click", restartServer);
   $("check-update")?.addEventListener("click", () => {
     const current = $("current-version").textContent;
     checkUpdate(current);
