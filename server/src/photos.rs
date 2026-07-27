@@ -3,12 +3,12 @@ use futures::future::BoxFuture;
 use futures::FutureExt;
 use regex::Regex;
 use reqwest::{header, Client};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::box_api::{fetch_embedded_metadata, BoxFolderItems, BoxItem};
+use crate::box_api::{fetch_embedded_metadata, BoxFolderItems, BoxItem, BoxPathCollection};
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -49,6 +49,34 @@ fn extract_folder_id(url: &str) -> String {
     } else {
         url.to_string()
     }
+}
+
+async fn fetch_folder_prefix(client: &Client, folder_id: &str) -> Result<String> {
+    let url = format!(
+        "https://api.box.com/2.0/folders/{}?fields=name,path_collection",
+        folder_id
+    );
+    let resp = client.get(&url).send().await?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(anyhow::anyhow!("Box API Error {}: {}", status, text));
+    }
+    #[derive(Deserialize)]
+    struct FolderInfo {
+        name: String,
+        path_collection: BoxPathCollection,
+    }
+    let info: FolderInfo = resp.json().await?;
+    let mut parts: Vec<&str> = info
+        .path_collection
+        .entries
+        .iter()
+        .skip(1)
+        .map(|e| e.name.as_str())
+        .collect();
+    parts.push(&info.name);
+    Ok(parts.join("/"))
 }
 
 fn parse_coordinate(s: &str) -> Option<f64> {
@@ -280,7 +308,8 @@ pub async fn run_process(
             return Err(anyhow::anyhow!("処理を停止しました"));
         }
         let folder_id = extract_folder_id(folder_url);
-        let mut files = get_image_files_recursive(&client, &folder_id, "", progress).await?;
+        let prefix = fetch_folder_prefix(&client, &folder_id).await?;
+        let mut files = get_image_files_recursive(&client, &folder_id, &prefix, progress).await?;
         image_files.append(&mut files);
     }
 
