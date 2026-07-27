@@ -17,3 +17,9 @@ node_modules/
 .DS_Store
 Thumbs.db
 .vscode/settings.json
+
+# --- Download Directory ---
+# ZIP は配信用にコミットする
+download/*.exe
+download/*.msi
+download/*.sig

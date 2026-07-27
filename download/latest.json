@@ -1,0 +1,11 @@
+{
+  "version": "3.0.0",
+  "notes": "kasugai_box バージョン 3.0.0\n\n- Rust × axum による API サイドカーとして再構成",
+  "pub_date": "2026-07-27T00:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "",
+      "url": "https://yamamoto-ryuzo.github.io/kasugai_box/download/kasugai_box.zip"
+    }
+  }
+}
