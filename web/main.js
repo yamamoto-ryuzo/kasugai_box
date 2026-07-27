@@ -35,6 +35,7 @@ async function loadSavedConfig() {
     $("mcp-connection-token").placeholder = config.hasMcpConnectionToken ? SAVED_PLACEHOLDER : "MCP connection token";
     $("box-search-limit").value = config.searchLimit ?? 100;
     $("server-port-input").value = config.port ?? 8410;
+    $("auto-update").checked = config.autoUpdate ?? true;
   } catch (err) {
     $("settings-status").textContent = `設定取得エラー: ${err.message}`;
   }
@@ -77,6 +78,7 @@ async function saveSettings() {
     mcpConnectionToken: $("mcp-connection-token").value.trim() || null,
     searchLimit: Math.min(MAX_SEARCH_LIMIT, Math.max(1, parseInt($("box-search-limit").value) || 100)),
     port: Math.min(65535, Math.max(1, parseInt($("server-port-input").value) || 8410)),
+    autoUpdate: $("auto-update").checked,
   };
   try {
     await apiPost("/api/v1/config", config);
@@ -259,6 +261,9 @@ async function checkUpdate(currentVersion) {
         $("download-update").href = url;
         $("download-update").hidden = false;
         $("install-update").hidden = false;
+        if ($("auto-update")?.checked) {
+          installUpdate();
+        }
       }
     } else if (cmp === 0) {
       $("update-status").textContent = "（最新です）";

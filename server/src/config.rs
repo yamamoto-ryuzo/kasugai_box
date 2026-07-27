@@ -2,6 +2,10 @@ use anyhow::Result;
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Serialize, Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
@@ -18,6 +22,8 @@ pub struct Config {
     pub search_limit: Option<usize>,
     #[serde(default)]
     pub port: Option<u16>,
+    #[serde(default = "default_true")]
+    pub auto_update: bool,
 }
 
 pub const DEFAULT_PORT: u16 = 8410;
@@ -50,6 +56,7 @@ pub struct ConfigView {
     pub mcp_server_url: Option<String>,
     pub search_limit: Option<usize>,
     pub port: u16,
+    pub auto_update: bool,
     pub has_client_id: bool,
     pub has_client_secret: bool,
     pub has_developer_token: bool,
@@ -64,6 +71,7 @@ impl From<&Config> for ConfigView {
             mcp_server_url: c.mcp_server_url.clone(),
             search_limit: c.search_limit,
             port: c.port.unwrap_or(DEFAULT_PORT),
+            auto_update: c.auto_update,
             has_client_id: has(&c.client_id),
             has_client_secret: has(&c.client_secret),
             has_developer_token: has(&c.developer_token),
@@ -84,6 +92,7 @@ pub struct ConfigUpdate {
     pub mcp_connection_token: Option<String>,
     pub search_limit: Option<usize>,
     pub port: Option<u16>,
+    pub auto_update: Option<bool>,
 }
 
 pub fn apply_update(update: ConfigUpdate) -> Result<Config> {
@@ -111,6 +120,9 @@ pub fn apply_update(update: ConfigUpdate) -> Result<Config> {
     }
     if let Some(v) = update.port {
         config.port = Some(v.max(1));
+    }
+    if let Some(v) = update.auto_update {
+        config.auto_update = v;
     }
     save_config(&config)?;
     Ok(config)

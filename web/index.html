@@ -156,6 +156,10 @@
               MCP 接続トークン（任意・未設定時はBoxログインのトークンを使用）
               <input type="password" id="mcp-connection-token" placeholder="MCP connection token" />
             </label>
+            <label>
+              <input type="checkbox" id="auto-update" checked />
+              起動時に自動で更新を確認し、新しいバージョンがあれば自動インストールする
+            </label>
             <button id="save-settings" type="button">保存</button>
             <div id="settings-status"></div>
             <p class="chat-intro">機密情報は OS の資格情報保護（Keyring）に保存され、この画面には表示されません。保存済みの項目は「保存済み」と表示されます。変更する場合のみ入力してください。</p>
