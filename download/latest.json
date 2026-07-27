@@ -1,6 +1,6 @@
 {
-  "version": "3.0.2",
-  "notes": "kasugai_box バージョン 3.0.2\n\n- 動作テスト用バージョンアップ",
+  "version": "3.0.3",
+  "notes": "kasugai_box バージョン 3.0.3\n\n- Windows 向け NSIS インストーラー対応\n- ブラウザ起動・重複起動防止\n- AGENTS.md 追加",
   "pub_date": "2026-07-27T13:00:00Z",
   "platforms": {
     "windows-x86_64": {
