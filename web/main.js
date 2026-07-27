@@ -285,17 +285,17 @@ async function installUpdate() {
   }
 }
 
-function initTabs() {
-  const buttons = document.querySelectorAll(".tab-btn");
-  const panels = document.querySelectorAll(".tab-panel");
+function initTabs(btnSelector, panelSelector, dataAttr, idPrefix = "") {
+  const buttons = document.querySelectorAll(btnSelector);
+  const panels = document.querySelectorAll(panelSelector);
 
   for (const btn of buttons) {
     btn.addEventListener("click", () => {
-      const target = btn.dataset.tab;
+      const target = btn.dataset[dataAttr];
       for (const b of buttons) b.classList.remove("active");
       for (const p of panels) p.classList.remove("active");
       btn.classList.add("active");
-      $(`tab-${target}`).classList.add("active");
+      $(`${idPrefix}${target}`).classList.add("active");
     });
   }
 }
@@ -394,7 +394,8 @@ async function callMcpTool() {
 window.addEventListener("DOMContentLoaded", () => {
   loadSavedConfig();
   loadVersion();
-  initTabs();
+  initTabs(".tab-btn", ".tab-panel", "tab", "tab-");
+  initTabs(".sub-tab-btn", ".sub-panel", "subtab", "");
   $("run-btn").addEventListener("click", run);
   $("chat-send").addEventListener("click", sendChat);
   $("chat-input").addEventListener("keydown", (e) => {

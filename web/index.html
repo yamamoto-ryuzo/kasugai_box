@@ -17,9 +17,8 @@
         <button class="tab-btn active" data-tab="photo">Photo</button>
         <button class="tab-btn" data-tab="box-api">Box API</button>
         <button class="tab-btn" data-tab="mcp">MCP</button>
-        <button class="tab-btn" data-tab="login">ログイン</button>
-        <button class="tab-btn" data-tab="settings">設定</button>
         <button class="tab-btn" data-tab="api-help">APIヘルプ</button>
+        <button class="tab-btn" data-tab="admin">管理</button>
       </div>
 
       <section id="tab-photo" class="tab-panel active">
@@ -66,7 +65,7 @@
 
       <section id="tab-mcp" class="tab-panel">
         <h2>MCP 接続</h2>
-        <p class="chat-intro">MCP サーバーに接続し、ツール一覧の取得と実行ができます。設定は「設定」タブで行ってください。</p>
+        <p class="chat-intro">MCP サーバーに接続し、ツール一覧の取得と実行ができます。設定は「管理」タブの「設定」で行ってください。</p>
         <div class="form">
           <button id="mcp-list-tools" type="button">ツール一覧を取得</button>
           <label>
@@ -105,51 +104,76 @@
         </ul>
       </section>
 
-      <section id="tab-settings" class="tab-panel">
-        <div class="form">
-          <label>
-            クライアントID
-            <input type="password" id="box-client-id" placeholder="Box Client ID" />
-          </label>
-          <label>
-            クライアントシークレット
-            <input type="password" id="box-client-secret" placeholder="Box Client Secret" />
-          </label>
-          <label>
-            デベロッパートークン（任意・1時間程度で失効）
-            <input type="password" id="box-developer-token" placeholder="Box Developer Token" />
-          </label>
-          <label>
-            Box API 検索件数（1〜200）
-            <input type="number" id="box-search-limit" min="1" max="200" value="100" />
-          </label>
-          <label>
-            サイドカー待ち受けポート（1〜65535、既定 8410）
-            <input type="number" id="server-port-input" min="1" max="65535" value="8410" />
-          </label>
-          <hr />
-          <h3>MCP 接続設定</h3>
-          <label>
-            MCP サーバーURL
-            <input type="text" id="mcp-server-url" placeholder="https://example.com/mcp" />
-          </label>
-          <label>
-            MCP 接続トークン（任意・未設定時はBoxログインのトークンを使用）
-            <input type="password" id="mcp-connection-token" placeholder="MCP connection token" />
-          </label>
-          <button id="save-settings" type="button">保存</button>
-          <div id="settings-status"></div>
-          <p class="chat-intro">機密情報は OS の資格情報保護（Keyring）に保存され、この画面には表示されません。保存済みの項目は「保存済み」と表示されます。変更する場合のみ入力してください。</p>
-          <hr />
-          <h3>サイドカー管理</h3>
+      <section id="tab-admin" class="tab-panel">
+        <div class="sub-tabs">
+          <button class="sub-tab-btn active" data-subtab="tab-login">ログイン</button>
+          <button class="sub-tab-btn" data-subtab="tab-settings">設定</button>
+          <button class="sub-tab-btn" data-subtab="tab-sidecar">サイドカー</button>
+          <button class="sub-tab-btn" data-subtab="tab-version">バージョン</button>
+        </div>
+
+        <section id="tab-login" class="sub-panel active">
+          <div class="form">
+            <p>「設定」サブタブでデベロッパートークン、またはクライアントIDとクライアントシークレットを入力してください。</p>
+            <button id="box-developer-token-login" type="button">デベロッパートークンでログイン</button>
+            <hr />
+            <button id="box-oauth-auto" type="button">Box OAuth 自動ログイン（localhost）</button>
+            <button id="box-oauth-logout" type="button">ログアウト</button>
+            <div id="box-oauth-status"></div>
+          </div>
+        </section>
+
+        <section id="tab-settings" class="sub-panel">
+          <div class="form">
+            <label>
+              クライアントID
+              <input type="password" id="box-client-id" placeholder="Box Client ID" />
+            </label>
+            <label>
+              クライアントシークレット
+              <input type="password" id="box-client-secret" placeholder="Box Client Secret" />
+            </label>
+            <label>
+              デベロッパートークン（任意・1時間程度で失効）
+              <input type="password" id="box-developer-token" placeholder="Box Developer Token" />
+            </label>
+            <label>
+              Box API 検索件数（1〜200）
+              <input type="number" id="box-search-limit" min="1" max="200" value="100" />
+            </label>
+            <label>
+              サイドカー待ち受けポート（1〜65535、既定 8410）
+              <input type="number" id="server-port-input" min="1" max="65535" value="8410" />
+              <p class="chat-intro">ポート設定は keyring に保存され、次回起動時に反映されます（環境変数 <code>KASUGAI_BOX_PORT</code> で上書き可）。</p>
+            </label>
+            <hr />
+            <h3>MCP 接続設定</h3>
+            <label>
+              MCP サーバーURL
+              <input type="text" id="mcp-server-url" placeholder="https://example.com/mcp" />
+            </label>
+            <label>
+              MCP 接続トークン（任意・未設定時はBoxログインのトークンを使用）
+              <input type="password" id="mcp-connection-token" placeholder="MCP connection token" />
+            </label>
+            <button id="save-settings" type="button">保存</button>
+            <div id="settings-status"></div>
+            <p class="chat-intro">機密情報は OS の資格情報保護（Keyring）に保存され、この画面には表示されません。保存済みの項目は「保存済み」と表示されます。変更する場合のみ入力してください。</p>
+          </div>
+        </section>
+
+        <section id="tab-sidecar" class="sub-panel">
+          <h2>サイドカー管理</h2>
           <div class="form">
             <p>実行中ポート: <code id="server-port">-</code> / バインド: <code>127.0.0.1</code></p>
             <button id="server-stop" type="button">kasugai_box を停止</button>
             <div id="server-status-text"></div>
-            <p class="chat-intro">停止は KASUGAI 本体からの再起動または手動実行で復帰します。ポート設定は keyring に保存され、次回起動時に反映されます（環境変数 <code>KASUGAI_BOX_PORT</code> で上書き可）。</p>
+            <p class="chat-intro">停止は KASUGAI 本体からの再起動または手動実行で復帰します。</p>
           </div>
-          <hr />
-          <h3>バージョン情報</h3>
+        </section>
+
+        <section id="tab-version" class="sub-panel">
+          <h2>バージョン情報</h2>
           <div class="form">
             <p>現在のバージョン: <code id="current-version">-</code></p>
             <p>最新バージョン: <code id="latest-version">-</code> <span id="update-status"></span></p>
@@ -158,20 +182,8 @@
             <button id="install-update" type="button" hidden>最新版を自動インストール</button>
             <div id="version-status"></div>
           </div>
-        </div>
+        </section>
       </section>
-
-      <section id="tab-login" class="tab-panel">
-        <div class="form">
-          <p>設定タブでデベロッパートークン、またはクライアントIDとクライアントシークレットを入力してください。</p>
-          <button id="box-developer-token-login" type="button">デベロッパートークンでログイン</button>
-          <hr />
-          <button id="box-oauth-auto" type="button">Box OAuth 自動ログイン（localhost）</button>
-          <button id="box-oauth-logout" type="button">ログアウト</button>
-          <div id="box-oauth-status"></div>
-        </div>
-      </section>
-
 
     </main>
   </body>
