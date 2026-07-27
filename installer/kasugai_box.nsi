@@ -11,7 +11,7 @@ RequestExecutionLevel admin
 
 !define MUI_ABORTWARNING
 
-; ページ
+; Pages
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES

@@ -15,6 +15,54 @@ KASUGAI 本体は **ブラウザ/タブをいろいろ操作するため** の T
 
 - **[download/kasugai_box.zip](./download/kasugai_box.zip)** — `python run.py -B` でビルド・配置されます（ZIP 内の `kasugai_box.exe` を展開して利用してください）
 
+## インストール
+
+### 前提条件
+
+- Windows（ビルド済みバイナリ・NSIS インストーラーは Windows 向け）
+- [Rust](https://www.rust-lang.org/tools/install)（ソースからビルドする場合）
+- [Python 3](https://www.python.org/downloads/)（`run.py` ランチャーを使う場合）
+
+### ビルド済みバイナリで利用する場合
+
+1. [download/kasugai_box.zip](./download/kasugai_box.zip) をダウンロードします。
+2. 任意のフォルダに展開します。
+3. `kasugai_box.exe` をダブルクリック、またはコマンドラインから実行します。
+
+### ソースからビルドする場合
+
+```sh
+cd C:\devin\kasugai_box
+python run.py -B
+```
+
+または、直接 `cargo` を使う場合：
+
+```sh
+cd C:\devin\kasugai_box\server
+cargo build --release
+```
+
+ビルド後、`server/target/release/kasugai_box.exe` が生成されます。
+
+### NSIS インストーラーを作成する場合
+
+NSIS をインストール済みの環境で、以下を実行します。
+
+```sh
+cd C:\devin\kasugai_box
+python run.py --installer
+```
+
+または、直接 `makensis` を使う場合：
+
+```sh
+cd C:\devin\kasugai_box
+makensis installer\kasugai_box.nsi
+```
+
+`download/kasugai_box_setup.exe` が生成されます。これを実行すると Windows のスタートメニューに登録されてインストールされます。
+
 ## ドキュメント（GitHub Pages）
 
 詳細なドキュメントは **GitHub Pages** で確認してください。

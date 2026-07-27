@@ -50,18 +50,23 @@ def _find_makensis():
     return None
 
 
-def build_installer():
+def build_installer(exit_on_missing=True):
     """NSIS インストーラーを作成する"""
     makensis = _find_makensis()
     if makensis is None:
         print("makensis.exe が見つかりません。NSIS をインストールして PATH を通してください。", file=sys.stderr)
         print("https://nsis.sourceforge.io/Download", file=sys.stderr)
-        sys.exit(1)
+        if exit_on_missing:
+            sys.exit(1)
+        return
     nsi = ROOT / "installer" / "kasugai_box.nsi"
     if not nsi.exists():
         print(f"インストーラースクリプトが見つかりません: {nsi}", file=sys.stderr)
         sys.exit(1)
-    subprocess.run([str(makensis), str(nsi)], cwd=ROOT)
+    result = subprocess.run([str(makensis), str(nsi)], cwd=ROOT)
+    if result.returncode != 0:
+        print(f"インストーラーの作成に失敗しました（exit code: {result.returncode}）", file=sys.stderr)
+        sys.exit(1)
     print(f"インストーラーを作成しました: {DOWNLOAD_DIR / 'kasugai_box_setup.exe'}")
 
 
@@ -95,13 +100,26 @@ def main():
         action="store_true",
         help="リリースビルド後に NSIS インストーラー (download/kasugai_box_setup.exe) を作成",
     )
+    parser.add_argument(
+        "build_short",
+        nargs="?",
+        choices=["b", "B"],
+        metavar="b",
+        help="ビルドのショートカット（b または B を指定すると --build と同じ）",
+    )
     args = parser.parse_args()
+
+    if args.build_short in ("b", "B"):
+        if args.release:
+            parser.error("b/B と --release は同時に指定できません")
+        args.build = True
 
     if args.installer:
         build_release()
         build_installer()
     elif args.build:
         build_release()
+        build_installer(exit_on_missing=False)
     elif args.release:
         run_release()
     else:
