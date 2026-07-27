@@ -240,6 +240,7 @@ async function loadVersion() {
 async function checkUpdate(currentVersion) {
   $("version-status").textContent = "最新情報を確認中...";
   $("download-update").hidden = true;
+  $("install-update").hidden = true;
   try {
     const latest = await apiGet("/api/v1/update/latest");
     const latestVersion = latest.version ?? "-";
@@ -257,6 +258,7 @@ async function checkUpdate(currentVersion) {
       if (url) {
         $("download-update").href = url;
         $("download-update").hidden = false;
+        $("install-update").hidden = false;
       }
     } else if (cmp === 0) {
       $("update-status").textContent = "（最新です）";
@@ -268,6 +270,18 @@ async function checkUpdate(currentVersion) {
   } catch (err) {
     $("latest-version").textContent = "-";
     $("version-status").textContent = `更新確認エラー: ${err.message}`;
+  }
+}
+
+async function installUpdate() {
+  $("version-status").textContent = "最新版をダウンロードして自動インストールを準備中...";
+  $("install-update").disabled = true;
+  try {
+    const result = await apiPost("/api/v1/update/install");
+    $("version-status").textContent = result?.message || "アップデートを開始しました";
+  } catch (err) {
+    $("version-status").textContent = `自動インストールエラー: ${err.message}`;
+    $("install-update").disabled = false;
   }
 }
 
@@ -398,4 +412,5 @@ window.addEventListener("DOMContentLoaded", () => {
     const current = $("current-version").textContent;
     checkUpdate(current);
   });
+  $("install-update")?.addEventListener("click", installUpdate);
 });

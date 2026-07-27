@@ -71,11 +71,87 @@ async fn health() -> Json<serde_json::Value> {
 
 const LATEST_JSON_URL: &str = "https://yamamoto-ryuzo.github.io/kasugai_box/download/latest.json";
 
-async fn update_latest() -> ApiResult<Json<serde_json::Value>> {
+async fn fetch_latest() -> ApiResult<serde_json::Value> {
     let response = reqwest::get(LATEST_JSON_URL).await?.error_for_status()?;
     let text = response.text().await?;
     let data: serde_json::Value = serde_json::from_str(&text)?;
-    Ok(Json(data))
+    Ok(data)
+}
+
+async fn update_latest() -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(fetch_latest().await?))
+}
+
+async fn install_update(State(state): State<Arc<AppState>>) -> ApiResult<Json<serde_json::Value>> {
+    let data = fetch_latest().await?;
+    let url = data["platforms"]["windows-x86_64"]["url"]
+        .as_str()
+        .ok_or_else(|| ApiError::bad_request("ダウンロードURLが見つかりません"))?;
+
+    let current_exe = std::env::current_exe().map_err(ApiError::from)?;
+    let parent_pid = std::process::id();
+    let tmp_dir = std::env::temp_dir().join(format!("kasugai_box_update_{parent_pid}"));
+    tokio::fs::create_dir_all(&tmp_dir).await.map_err(ApiError::from)?;
+
+    let zip_path = tmp_dir.join("kasugai_box.zip");
+    let extract_dir = tmp_dir.join("extracted");
+
+    let response = reqwest::get(url).await?.error_for_status()?;
+    let bytes = response.bytes().await?;
+    tokio::fs::write(&zip_path, bytes).await.map_err(ApiError::from)?;
+
+    let extract_status = tokio::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            "Expand-Archive",
+            "-Path",
+            &zip_path.to_string_lossy(),
+            "-DestinationPath",
+            &extract_dir.to_string_lossy(),
+            "-Force",
+        ])
+        .status()
+        .await
+        .map_err(ApiError::from)?;
+    if !extract_status.success() {
+        return Err(ApiError::bad_request("ZIP展開に失敗しました"));
+    }
+
+    let new_exe = extract_dir.join("kasugai_box.exe");
+    if !new_exe.exists() {
+        return Err(ApiError::bad_request("展開後に実行ファイルが見つかりません"));
+    }
+
+    let script_path = tmp_dir.join("update.ps1");
+    let script = format!(
+        "$parentPid = {parent_pid}\n$newExe = '{new}'\n$currentExe = '{current}'\nwhile (Get-Process -Id $parentPid -ErrorAction SilentlyContinue) {{ Start-Sleep -Milliseconds 500 }}\nCopy-Item -Path $newExe -Destination $currentExe -Force\nStart-Process -FilePath $currentExe -WindowStyle Hidden\n",
+        new = new_exe.to_string_lossy().replace("'", "''"),
+        current = current_exe.to_string_lossy().replace("'", "''")
+    );
+    tokio::fs::write(&script_path, script).await.map_err(ApiError::from)?;
+
+    tokio::process::Command::new("powershell")
+        .args([
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            &script_path.to_string_lossy(),
+        ])
+        .spawn()
+        .map_err(ApiError::from)?;
+
+    let state = state.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        state.shutdown.notify_one();
+    });
+
+    Ok(Json(json!({ "message": "アップデートを開始しました。数秒後に再起動します。" })))
 }
 
 async fn get_config() -> Json<ConfigView> {
@@ -283,6 +359,7 @@ async fn main() {
         .route("/styles.css", get(serve_styles_css))
         .route("/health", get(health))
         .route("/api/v1/update/latest", get(update_latest))
+        .route("/api/v1/update/install", post(install_update))
         .route("/openapi.yaml", get(serve_openapi))
         .route("/api/v1/config", get(get_config).post(post_config))
         .route("/api/v1/auth/box/login", post(auth_login))
