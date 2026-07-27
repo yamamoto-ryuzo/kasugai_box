@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 mod auth;
 mod box_api;
 mod config;
@@ -32,6 +33,7 @@ const INDEX_HTML: &str = include_str!("../../web/index.html");
 const MAIN_JS: &str = include_str!("../../web/main.js");
 const STYLES_CSS: &str = include_str!("../../web/styles.css");
 const OPENAPI_YAML: &str = include_str!("../../openapi.yaml");
+const FAVICON_ICO: &[u8] = include_bytes!("../../web/favicon.ico");
 
 struct ApiError {
     status: StatusCode,
@@ -322,6 +324,10 @@ async fn serve_openapi() -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "application/yaml; charset=utf-8")], OPENAPI_YAML)
 }
 
+async fn serve_favicon() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "image/x-icon")], FAVICON_ICO)
+}
+
 async fn server_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     Json(json!({
         "running": true,
@@ -361,6 +367,7 @@ async fn main() {
         .route("/api/v1/update/latest", get(update_latest))
         .route("/api/v1/update/install", post(install_update))
         .route("/openapi.yaml", get(serve_openapi))
+        .route("/favicon.ico", get(serve_favicon))
         .route("/api/v1/config", get(get_config).post(post_config))
         .route("/api/v1/auth/box/login", post(auth_login))
         .route("/api/v1/auth/box/developer-token", post(auth_developer_token))
@@ -376,11 +383,24 @@ async fn main() {
         .route("/mcp", post(mcp_server::handle))
         .with_state(state);
 
+    let open_browser = std::env::args().any(|a| a == "--open-browser");
+
     // 127.0.0.1 固定（方針書 1.2：0.0.0.0 バインド禁止）
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let listener = match tokio::net::TcpListener::bind(addr).await {
         Ok(l) => l,
         Err(e) => {
+            // 既に起動済み（ポート使用中）の場合は、多重起動せず既存インスタンスの UI をブラウザで開いて終了する
+            let health_url = format!("http://127.0.0.1:{}/health", port);
+            if reqwest::get(&health_url)
+                .await
+                .map(|r| r.status().is_success())
+                .unwrap_or(false)
+            {
+                let _ = opener::open(format!("http://127.0.0.1:{}/ui", port));
+                println!("kasugai_box は既にポート {} で起動しています。ブラウザで UI を開きました。", port);
+                return;
+            }
             eprintln!("kasugai_box: ポート {} で起動できません: {}", port, e);
             eprintln!("環境変数 KASUGAI_BOX_PORT で別のポートを指定してください。");
             std::process::exit(1);
@@ -394,6 +414,21 @@ async fn main() {
     let server = axum::serve(listener, app).with_graceful_shutdown(async move {
         shutdown.notified().await;
     });
+    if open_browser {
+        let open_url = format!("http://127.0.0.1:{}/ui", port);
+        let health_url = format!("http://127.0.0.1:{}/health", port);
+        tokio::spawn(async move {
+            for _ in 0..60 {
+                if let Ok(resp) = reqwest::get(&health_url).await {
+                    if resp.status().is_success() {
+                        let _ = opener::open(&open_url);
+                        break;
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+        });
+    }
     if let Err(e) = server.await {
         eprintln!("server error: {}", e);
     }

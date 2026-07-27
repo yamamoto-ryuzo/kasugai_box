@@ -20,3 +20,6 @@ anyhow = "1.0"
 keyring = "4.1"
 opener = "0.8"
 uuid = { version = "1", features = ["v4"] }
+
+[build-dependencies]
+winres = "0.1.12"

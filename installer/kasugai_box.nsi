@@ -10,6 +10,9 @@ InstallDir "C:\kasugai\kasugai_box"
 RequestExecutionLevel admin
 
 !define MUI_ABORTWARNING
+; icon.ico は 16x16 から 256x256 までのマルチサイズ ICO を含む
+!define MUI_ICON "icon.ico"
+!define MUI_UNICON "icon.ico"
 
 ; Pages
 !insertmacro MUI_PAGE_WELCOME
@@ -18,6 +21,7 @@ RequestExecutionLevel admin
 
 ; Finish page options
 !define MUI_FINISHPAGE_RUN "$INSTDIR\kasugai_box.exe"
+!define MUI_FINISHPAGE_RUN_PARAMETERS "--open-browser"
 !define MUI_FINISHPAGE_RUN_TEXT "Run kasugai"
 !define MUI_FINISHPAGE_SHOWREADME
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "Create desktop shortcut"
@@ -34,7 +38,7 @@ Section "kasugai_box" SecMain
   File "..\server\target\release\kasugai_box.exe"
   WriteUninstaller "$INSTDIR\uninstall.exe"
   CreateDirectory "$SMPROGRAMS\kasugai_box"
-  CreateShortcut "$SMPROGRAMS\kasugai_box\kasugai_box.lnk" "$INSTDIR\kasugai_box.exe"
+  CreateShortcut "$SMPROGRAMS\kasugai_box\kasugai_box.lnk" "$INSTDIR\kasugai_box.exe" "--open-browser" "$INSTDIR\kasugai_box.exe" 0 SW_SHOWNORMAL "" "" "$INSTDIR"
 SectionEnd
 
 Section "Uninstall"
@@ -47,5 +51,5 @@ Section "Uninstall"
 SectionEnd
 
 Function CreateDesktopShortcut
-  CreateShortcut "$DESKTOP\kasugai_box.lnk" "$INSTDIR\kasugai_box.exe"
+  CreateShortcut "$DESKTOP\kasugai_box.lnk" "$INSTDIR\kasugai_box.exe" "--open-browser" "$INSTDIR\kasugai_box.exe" 0 SW_SHOWNORMAL "" "" "$INSTDIR"
 FunctionEnd
