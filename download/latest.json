@@ -1,7 +1,7 @@
 {
-  "version": "3.0.0",
-  "notes": "kasugai_box バージョン 3.0.0\n\n- Rust × axum による API サイドカーとして再構成",
-  "pub_date": "2026-07-27T00:00:00Z",
+  "version": "3.0.1",
+  "notes": "kasugai_box バージョン 3.0.1\n\n- テスト用バージョンアップ",
+  "pub_date": "2026-07-27T12:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "",
