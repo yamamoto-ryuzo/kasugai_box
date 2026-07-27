@@ -131,6 +131,21 @@ input {
   font-size: 1rem;
 }
 
+input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.checkbox-label {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: normal;
+  cursor: pointer;
+}
+
 button {
   padding: 0.6rem 1.2rem;
   font-size: 1rem;
