@@ -78,7 +78,6 @@ async function saveSettings() {
     mcpConnectionToken: $("mcp-connection-token").value.trim() || null,
     searchLimit: Math.min(MAX_SEARCH_LIMIT, Math.max(1, parseInt($("box-search-limit").value) || 100)),
     port: Math.min(65535, Math.max(1, parseInt($("server-port-input").value) || 8410)),
-    autoUpdate: $("auto-update").checked,
   };
   try {
     await apiPost("/api/v1/config", config);
@@ -290,6 +289,15 @@ async function installUpdate() {
   }
 }
 
+async function saveAutoUpdate() {
+  try {
+    await apiPost("/api/v1/config", { autoUpdate: $("auto-update").checked });
+    $("version-status").textContent = "自動更新設定を保存しました";
+  } catch (err) {
+    $("version-status").textContent = `自動更新設定の保存エラー: ${err.message}`;
+  }
+}
+
 function initTabs(btnSelector, panelSelector, dataAttr, idPrefix = "") {
   const buttons = document.querySelectorAll(btnSelector);
   const panels = document.querySelectorAll(panelSelector);
@@ -419,4 +427,5 @@ window.addEventListener("DOMContentLoaded", () => {
     checkUpdate(current);
   });
   $("install-update")?.addEventListener("click", installUpdate);
+  $("auto-update")?.addEventListener("change", saveAutoUpdate);
 });
