@@ -1,7 +1,7 @@
 {
-  "version": "3.0.1",
-  "notes": "kasugai_box バージョン 3.0.1\n\n- テスト用バージョンアップ",
-  "pub_date": "2026-07-27T12:00:00Z",
+  "version": "3.0.2",
+  "notes": "kasugai_box バージョン 3.0.2\n\n- 動作テスト用バージョンアップ",
+  "pub_date": "2026-07-27T13:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "",
