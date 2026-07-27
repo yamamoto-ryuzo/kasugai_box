@@ -35,11 +35,13 @@ KASUGAI 本体は **ブラウザ/タブを操作するため** の Tauri アプ�
 
 ## ダウンロード
 
-| 種別 | 入手先 | 備考 |
-| :--- | :--- | :--- |
-| リリースビルド済みバイナリ | [download/kasugai_box.zip](./download/kasugai_box.zip) | `python run.py b` でビルド・配置されます。ZIP 内の `kasugai_box.exe` を展開して利用してください |
-| NSIS インストーラー | [download/kasugai_box_setup.exe](./download/kasugai_box_setup.exe) | `python run.py b` でビルドされます。実行すると Windows のスタートメニューに登録され、終了ページで「Run kasugai」と「Create desktop shortcut」が選べます |
-| ソースコード | [GitHub リポジトリ](https://github.com/yamamoto-ryuzo/kasugai_box) | `python run.py b`（または `cargo build --release`）でビルド可能 |
+| 種別 | 入手先 |
+| :--- | :--- |
+| リリースビルド済みバイナリ | [download/kasugai_box.zip](./download/kasugai_box.zip) |
+| NSIS インストーラー | [download/kasugai_box_setup.exe](./download/kasugai_box_setup.exe) |
+| ソースコード | [GitHub リポジトリ](https://github.com/yamamoto-ryuzo/kasugai_box) |
+
+インストーラー・ショートカットの仕様は [AGENTS.md](./AGENTS.md) を参照してください。
 
 ---
 
@@ -49,6 +51,7 @@ KASUGAI 本体は **ブラウザ/タブを操作するため** の Tauri アプ�
 | :--- | :--- |
 | [OpenAPI 仕様](./openapi.yaml) | REST API / MCP エンドポイントの完全な仕様 |
 | [KASUGAI 外部連携方針](../kasugai/KASUGAI_INTEGRATION_POLICY.md) | KASUGAI サイドカー全体の設計方針 |
+| [インストーラー・ショートカット仕様](./AGENTS.md) | Windows 配布用の標準パターン |
 | [Changelog](./CHANGELOG.md) | リリース履歴と変更点 |
 | [GitHub リポジトリ](https://github.com/yamamoto-ryuzo/kasugai_box) | ソースコード・Issue |
 
