@@ -350,12 +350,15 @@ function initTabs(btnSelector, panelSelector, dataAttr, idPrefix = "") {
   const panels = document.querySelectorAll(panelSelector);
 
   for (const btn of buttons) {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const target = btn.dataset[dataAttr];
       for (const b of buttons) b.classList.remove("active");
       for (const p of panels) p.classList.remove("active");
       btn.classList.add("active");
       $(`${idPrefix}${target}`).classList.add("active");
+      if (target === "tab-sidecar") {
+        await loadServerStatus();
+      }
     });
   }
 }
