@@ -5,7 +5,7 @@ info:
     KASUGAI 用 API サイドカー。Box フォルダ内画像の EXIF 抽出（CSV/GeoJSON 出力）、
     Box API チャット、Box OAuth ログインを HTTP/REST で提供します。
     AI エージェント向けには POST /mcp（Streamable HTTP）で同じ機能をツールとして提供します。
-  version: 3.0.5
+  version: 3.0.6
 servers:
   - url: http://127.0.0.1:8410
     description: ローカルサイドカー（既定ポート。KASUGAI_BOX_PORT で変更可）

@@ -1,7 +1,7 @@
 {
-  "version": "3.0.5",
-  "notes": "kasugai_box バージョン 3.0.5\n\n- Photo タブの利便性向上\n- 長時間処理の停止機能\n- 複数 Box フォルダ URL の同時指定\n- 出力フォルダを開く API",
-  "pub_date": "2026-07-28T13:00:00Z",
+  "version": "3.0.6",
+  "notes": "kasugai_box バージョン 3.0.6\n\n- 写真の位置情報が取得できない不具合を修正\n- メタデータ取得を並列化して高速化\n- メタデータ取得エラーを結果メッセージに表示",
+  "pub_date": "2026-07-28T15:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "",

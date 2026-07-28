@@ -219,6 +219,10 @@ pub async fn box_api_put(token: &str, url: &str, body: &str) -> Result<String> {
 #[derive(Deserialize, Debug)]
 struct RepStatus {
     state: Option<String>,
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -249,27 +253,29 @@ struct FileRepresentations {
     representations: Option<Representations>,
 }
 
+/// `x-rep-hints` ヘッダー名（representation の指定に必須）。
+const REP_HINTS: &str = "x-rep-hints";
+/// 埋め込みメタデータ（ExifTool 形式の JSON）の representation 名。
+const EMBEDDED_METADATA_HINT: &str = "[embedded_metadata]";
+
 /// ファイルの `embedded_metadata` 表現を取得し、JSON 形式の埋め込みメタデータを返す。
-/// Box の ondemand 表現のため、生成が必要な場合は info URL をトリガーしてポーリングする。
-pub async fn fetch_embedded_metadata(token: &str, file_id: &str) -> Result<serde_json::Value> {
+///
+/// Box の representation は ondemand 生成のため、`state` が `none` の場合は
+/// `info.url` を GET して生成をトリガーし、`success`/`viewable` になるまでポーリングする。
+/// `client` は Authorization ヘッダーを既定ヘッダーに持つものを渡す。
+pub async fn fetch_embedded_metadata(client: &Client, file_id: &str) -> Result<serde_json::Value> {
     let url = format!(
         "https://api.box.com/2.0/files/{}?fields=representations",
         file_id
     );
-    let mut headers = header::HeaderMap::new();
-    headers.insert(
-        header::AUTHORIZATION,
-        header::HeaderValue::from_str(&format!("Bearer {}", token))?,
-    );
-    headers.insert(
-        header::HeaderName::from_static("x-rep-hints"),
-        header::HeaderValue::from_static("[embedded_metadata]"),
-    );
-    let client = Client::builder().default_headers(headers).build()?;
 
     let mut triggered = false;
-    for _ in 0..60 {
-        let resp = client.get(&url).send().await?;
+    for attempt in 0..30 {
+        let resp = client
+            .get(&url)
+            .header(REP_HINTS, EMBEDDED_METADATA_HINT)
+            .send()
+            .await?;
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
@@ -279,16 +285,17 @@ pub async fn fetch_embedded_metadata(token: &str, file_id: &str) -> Result<serde
         let rep = file
             .representations
             .as_ref()
-            .and_then(|r| r.entries.iter().find(|e| e.representation == "embedded_metadata"));
+            .and_then(|r| r.entries.iter().find(|e| e.representation == "embedded_metadata"))
+            .context("embedded_metadata 表現が利用できません（未対応のファイル形式の可能性）")?;
 
-        if let Some(rep) = rep {
-            let state = rep
-                .status
-                .as_ref()
-                .and_then(|s| s.state.as_deref())
-                .unwrap_or("none");
+        let state = rep
+            .status
+            .as_ref()
+            .and_then(|s| s.state.as_deref())
+            .unwrap_or("none");
 
-            if state == "success" || state == "viewable" {
+        match state {
+            "success" | "viewable" => {
                 let template = rep
                     .content
                     .as_ref()
@@ -309,18 +316,25 @@ pub async fn fetch_embedded_metadata(token: &str, file_id: &str) -> Result<serde
                 return serde_json::from_slice(&bytes)
                     .context("埋め込みメタデータの JSON パースに失敗しました");
             }
-
-            if state == "none" && !triggered {
+            "error" => {
+                let status = rep.status.as_ref();
+                return Err(anyhow::anyhow!(
+                    "Box embedded metadata 生成エラー: {} {}",
+                    status.and_then(|s| s.code.as_deref()).unwrap_or(""),
+                    status.and_then(|s| s.message.as_deref()).unwrap_or("")
+                ));
+            }
+            "none" if !triggered => {
                 if let Some(info_url) = rep.info.as_ref().and_then(|i| i.url.as_ref()) {
                     let _ = client.get(info_url).send().await?;
                 }
                 triggered = true;
             }
-        } else {
-            return Err(anyhow::anyhow!("embedded_metadata 表現が利用できません"));
+            _ => {}
         }
 
-        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        let wait = if attempt < 4 { 300 } else { 1000 };
+        tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
     }
 
     Err(anyhow::anyhow!("Box embedded metadata 生成がタイムアウトしました"))

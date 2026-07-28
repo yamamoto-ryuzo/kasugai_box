@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use futures::future::BoxFuture;
+use futures::stream::{self, StreamExt};
 use futures::FutureExt;
 use regex::Regex;
 use reqwest::{header, Client};
@@ -9,6 +10,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::box_api::{fetch_embedded_metadata, BoxFolderItems, BoxItem, BoxPathCollection};
+
+/// embedded_metadata 取得の同時実行数。Box のレート制限に配慮した値。
+const METADATA_CONCURRENCY: usize = 8;
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -79,31 +83,121 @@ async fn fetch_folder_prefix(client: &Client, folder_id: &str) -> Result<String>
     Ok(parts.join("/"))
 }
 
-fn parse_coordinate(s: &str) -> Option<f64> {
-    let dms_re = Regex::new(r#"(\d+(?:\.\d+)?)\s*deg\s*(\d+(?:\.\d+)?)\s*['′]\s*([\d.]+)\s*(?:"|''|″)?\s*([NSEW])"#).unwrap();
-    if let Some(caps) = dms_re.captures(s) {
-        let d: f64 = caps[1].parse().ok()?;
-        let m: f64 = caps[2].parse().ok()?;
-        let sec: f64 = caps[3].parse().ok()?;
-        let mut deg = d + m / 60.0 + sec / 3600.0;
-        if &caps[4] == "S" || &caps[4] == "W" {
-            deg = -deg;
-        }
-        return Some(deg);
+/// ExifTool が値を持たないときに出力するプレースホルダ。
+/// Box の embedded_metadata では GPS 情報のない写真が `""` / `"undef"` / `"Unknown ()"` を返す。
+fn is_placeholder(s: &str) -> bool {
+    let t = s.trim();
+    t.is_empty()
+        || t.eq_ignore_ascii_case("undef")
+        || t.starts_with("Unknown")
+        || t.starts_with("(Binary data")
+}
+
+/// `N`/`S`/`E`/`W` および ExifTool PrintConv の `North`/`South`/`East`/`West` を符号に変換する。
+fn hemisphere_sign(s: &str) -> Option<f64> {
+    let t = s.trim();
+    if is_placeholder(t) {
+        return None;
+    }
+    match t.chars().next()?.to_ascii_uppercase() {
+        'N' | 'E' => Some(1.0),
+        'S' | 'W' => Some(-1.0),
+        _ => None,
+    }
+}
+
+/// 座標文字列/数値を10進度に変換する。戻り値の `bool` は値自身に方位が含まれていたかを表す。
+///
+/// Box の embedded_metadata は ExifTool の PrintConv 済み文字列を返すため、複数の形式に対応する:
+/// - `EXIF` グループ: `35 deg 39' 29.99"`（方位は `GPSLatitudeRef` に分離）
+/// - `Composite` グループ: `35 deg 39' 29.99" N`
+/// - `XMP` グループ: `35,39.4999N`
+/// - 10進数（文字列・JSON 数値の両方）: `35.658`, `N 35.658`
+fn parse_coordinate(value: &Value) -> Option<(f64, bool)> {
+    if let Some(n) = value.as_f64() {
+        return Some((n, false));
+    }
+    let raw = value.as_str()?;
+    if is_placeholder(raw) {
+        return None;
     }
 
-    let dec_re = Regex::new(r"^([+-]?\d+(?:\.\d+)?)(?:\s*([NSEW]))?$").unwrap();
-    if let Some(caps) = dec_re.captures(s.trim()) {
-        let mut v: f64 = caps[1].parse().ok()?;
-        if let Some(h) = caps.get(2).map(|m| m.as_str()) {
-            if h == "S" || h == "W" {
-                v = -v.abs();
+    // `deg` の `e` が方位 `E` と衝突するため先に除去する。
+    let cleaned = Regex::new(r"(?i)deg").unwrap().replace_all(raw, " ");
+
+    // 方位を検出して除去する。単語形（North）→ 末尾の記号（`35,39.4999N`）→ 先頭の記号（`N 35.658`）の順。
+    let patterns = [
+        r"(?i)\b(north|south|east|west)\b",
+        r"(?i)([nsew])\s*$",
+        r"(?i)^\s*([nsew])\b",
+    ];
+    let mut sign = None;
+    let mut body = cleaned.to_string();
+    for pattern in patterns {
+        let re = Regex::new(pattern).unwrap();
+        if let Some(caps) = re.captures(&body) {
+            sign = hemisphere_sign(caps.get(1)?.as_str());
+            body = re.replace(&body, " ").to_string();
+            break;
+        }
+    }
+
+    // 残った数値を D / D M / D M S として解釈する。
+    let num_re = Regex::new(r"[+-]?\d+(?:\.\d+)?").unwrap();
+    let nums: Vec<f64> = num_re
+        .find_iter(&body)
+        .filter_map(|m| m.as_str().parse::<f64>().ok())
+        .collect();
+    let magnitude = match nums.as_slice() {
+        [d] => *d,
+        [d, m] => d.abs() + m / 60.0,
+        [d, m, s, ..] => d.abs() + m / 60.0 + s / 3600.0,
+        [] => return None,
+    };
+
+    match sign {
+        Some(sign) => Some((sign * magnitude.abs(), true)),
+        None => Some((magnitude, false)),
+    }
+}
+
+/// グループ内の座標を、必要なら `*Ref` キーの方位を適用して取得する。
+fn coordinate_from_group(
+    group: &serde_json::Map<String, Value>,
+    key: &str,
+    ref_key: &str,
+) -> Option<f64> {
+    let (value, has_hemisphere) = parse_coordinate(group.get(key)?)?;
+    if has_hemisphere {
+        return Some(value);
+    }
+    match group.get(ref_key).and_then(Value::as_str).and_then(hemisphere_sign) {
+        Some(sign) => Some(sign * value.abs()),
+        None => Some(value),
+    }
+}
+
+/// ExifTool のグループを探索順に並べる。Box は `Composite` を返さないため
+/// `EXIF` / `XMP` を主軸に、未知のグループも最後に走査する。
+fn metadata_groups(root: &Value) -> Vec<&serde_json::Map<String, Value>> {
+    const PREFERRED: [&str; 4] = ["Composite", "EXIF", "XMP", "GPS"];
+    let Some(root_obj) = root.as_object() else {
+        return Vec::new();
+    };
+    let mut groups = vec![root_obj];
+    for name in PREFERRED {
+        if let Some(g) = root_obj.get(name).and_then(Value::as_object) {
+            groups.push(g);
+        }
+    }
+    for (name, value) in root_obj {
+        if !PREFERRED.contains(&name.as_str()) {
+            if let Some(g) = value.as_object() {
+                groups.push(g);
             }
         }
-        return Some(v);
     }
-
-    None
+    groups
 }
 
 fn extract_embedded_location_and_datetime(
@@ -113,71 +207,62 @@ fn extract_embedded_location_and_datetime(
     let root = metadata
         .as_array()
         .and_then(|a| a.first())
-        .unwrap_or(&fallback);
+        .unwrap_or(metadata)
+        .clone();
+    let root = if root.is_null() { fallback } else { root };
+
+    let groups = metadata_groups(&root);
 
     let mut lat = None;
     let mut lon = None;
-
-    if let Some(root_obj) = root.as_object() {
-        'outer: for group in ["Composite", "EXIF", "BoxNormalized"] {
-            if let Some(obj) = root_obj.get(group).and_then(Value::as_object) {
-                if let Some(pos) = obj.get("GPSPosition").and_then(Value::as_str) {
-                    let parts: Vec<&str> = pos.split(',').collect();
-                    if parts.len() == 2 {
-                        if let (Some(la), Some(lo)) =
-                            (parse_coordinate(parts[0]), parse_coordinate(parts[1]))
-                        {
-                            lat = Some(la);
-                            lon = Some(lo);
-                            break 'outer;
-                        }
-                    }
-                }
-
-                if let (Some(la), Some(lo)) = (
-                    obj.get("GPSLatitude").and_then(Value::as_str),
-                    obj.get("GPSLongitude").and_then(Value::as_str),
-                ) {
-                    if let (Some(mut la), Some(mut lo)) =
-                        (parse_coordinate(la), parse_coordinate(lo))
-                    {
-                        if group == "EXIF" {
-                            if let Some(lat_ref) =
-                                obj.get("GPSLatitudeRef").and_then(Value::as_str)
-                            {
-                                if lat_ref == "S" {
-                                    la = -la.abs();
-                                }
-                            }
-                            if let Some(lon_ref) =
-                                obj.get("GPSLongitudeRef").and_then(Value::as_str)
-                            {
-                                if lon_ref == "W" {
-                                    lo = -lo.abs();
-                                }
-                            }
-                        }
+    for group in &groups {
+        // `Composite.GPSPosition` は "緯度, 経度" の1フィールドにまとまっている。
+        if let Some(pos) = group.get("GPSPosition").and_then(Value::as_str) {
+            if !is_placeholder(pos) {
+                let parts: Vec<&str> = pos.split(',').collect();
+                if parts.len() == 2 {
+                    if let (Some((la, _)), Some((lo, _))) = (
+                        parse_coordinate(&Value::from(parts[0])),
+                        parse_coordinate(&Value::from(parts[1])),
+                    ) {
                         lat = Some(la);
                         lon = Some(lo);
-                        break 'outer;
+                        break;
                     }
                 }
+            }
+        }
+
+        if let (Some(la), Some(lo)) = (
+            coordinate_from_group(group, "GPSLatitude", "GPSLatitudeRef"),
+            coordinate_from_group(group, "GPSLongitude", "GPSLongitudeRef"),
+        ) {
+            // 0,0 は「値なし」を意味する破損 EXIF が多いため採用しない。
+            if la != 0.0 || lo != 0.0 {
+                lat = Some(la);
+                lon = Some(lo);
+                break;
             }
         }
     }
 
-    let date_taken = root.as_object().and_then(|root_obj| {
-        for group in ["EXIF", "Composite"] {
-            if let Some(obj) = root_obj.get(group).and_then(Value::as_object) {
-                for key in ["DateTimeOriginal", "CreateDate", "DateTime", "DateTimeDigitized"] {
-                    if let Some(v) = obj.get(key).and_then(Value::as_str) {
-                        return Some(v.to_string());
-                    }
+    let mut date_taken = None;
+    'date: for key in [
+        "DateTimeOriginal",
+        "CreateDate",
+        "DateTimeDigitized",
+        "DateTime",
+        "ModifyDate",
+    ] {
+        for group in &groups {
+            if let Some(v) = group.get(key).and_then(Value::as_str) {
+                if !is_placeholder(v) {
+                    date_taken = Some(v.to_string());
+                    break 'date;
                 }
             }
         }
-        None
-    });
+    }
 
     (lat, lon, date_taken)
 }
@@ -321,37 +406,58 @@ pub async fn run_process(
         return Err(anyhow::anyhow!("処理を停止しました"));
     }
 
-    let mut records = Vec::new();
+    // メタデータ取得は representation の生成待ちを含むため、並列度を上げて実行する。
+    let mut slots: Vec<Option<PhotoRecord>> = vec![None; total];
+    let mut errors: Vec<String> = Vec::new();
+    let mut done = 0usize;
 
-    for (index, (file, parent_path)) in image_files.into_iter().enumerate() {
-        let (lat, lon, date_taken) = match fetch_embedded_metadata(&token, &file.id).await {
-            Ok(meta) => extract_embedded_location_and_datetime(&meta),
-            Err(_) => (None, None, None),
-        };
+    {
+        let client_ref = &client;
+        let mut stream = stream::iter(image_files.into_iter().enumerate().map(
+            |(index, (file, parent_path))| async move {
+                let meta = fetch_embedded_metadata(client_ref, &file.id).await;
+                (index, file, parent_path, meta)
+            },
+        ))
+        .buffer_unordered(METADATA_CONCURRENCY);
 
-        let url = format!("https://app.box.com/file/{}", file.id);
-        let full_name = if parent_path.is_empty() {
-            file.name.clone()
-        } else {
-            format!("{}/{}", parent_path, file.name)
-        };
+        while let Some((index, file, parent_path, meta)) = stream.next().await {
+            let (lat, lon, date_taken) = match meta {
+                Ok(meta) => extract_embedded_location_and_datetime(&meta),
+                Err(e) => {
+                    errors.push(format!("{}: {}", file.name, e));
+                    (None, None, None)
+                }
+            };
 
-        records.push(PhotoRecord {
-            name: file.name,
-            full_name,
-            latitude: lat,
-            longitude: lon,
-            date_taken,
-            url,
-        });
+            let url = format!("https://app.box.com/file/{}", file.id);
+            let full_name = if parent_path.is_empty() {
+                file.name.clone()
+            } else {
+                format!("{}/{}", parent_path, file.name)
+            };
 
-        if total > 0 {
-            let p = 5 + ((index + 1) * 90 / total) as u8;
-            if !progress(p, format!("{} / {} 件の画像を処理中...", index + 1, total)) {
+            slots[index] = Some(PhotoRecord {
+                name: file.name,
+                full_name,
+                latitude: lat,
+                longitude: lon,
+                date_taken,
+                url,
+            });
+
+            done += 1;
+            let p = 5 + (done * 90 / total.max(1)) as u8;
+            if !progress(p, format!("{} / {} 件の画像を処理中...", done, total)) {
                 return Err(anyhow::anyhow!("処理を停止しました"));
             }
         }
     }
+
+    for message in errors.iter().take(10) {
+        eprintln!("[photos] メタデータ取得に失敗: {}", message);
+    }
+    let records: Vec<PhotoRecord> = slots.into_iter().flatten().collect();
 
     let output = resolve_output_dir(&output_dir);
     fs::create_dir_all(&output).with_context(|| format!("出力フォルダを作成できません: {}", output_dir))?;
@@ -374,16 +480,28 @@ pub async fn run_process(
         None
     };
 
-    let message = if records.is_empty() {
-        "対象ファイルが見つかりませんでした。".into()
+    let located = records
+        .iter()
+        .filter(|r| r.latitude.is_some() && r.longitude.is_some())
+        .count();
+    let mut message = if records.is_empty() {
+        "対象ファイルが見つかりませんでした。".to_string()
     } else if geojson_path.is_some() {
         format!(
-            "{}件の画像を処理しました。CSVとGeoJSONを出力しました。",
-            records.len()
+            "{}件の画像を処理しました（位置情報あり {}件）。CSVとGeoJSONを出力しました。",
+            records.len(),
+            located
         )
     } else {
         format!("{}件の画像を処理しました。位置情報が含まれていませんでした。", records.len())
     };
+    if let Some(first) = errors.first() {
+        message.push_str(&format!(
+            " {}件のメタデータ取得に失敗しました（例: {}）。",
+            errors.len(),
+            first
+        ));
+    }
 
     if !progress(100, "処理を完了しました".into()) {
         return Err(anyhow::anyhow!("処理を停止しました"));
@@ -396,4 +514,148 @@ pub async fn run_process(
         output_dir: output.to_string_lossy().to_string(),
         message,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn approx(a: Option<f64>, b: f64) {
+        let a = a.expect("値がありません");
+        assert!((a - b).abs() < 1e-6, "{} != {}", a, b);
+    }
+
+    #[test]
+    fn parses_exiftool_dms_without_hemisphere() {
+        let (v, has_hemi) = parse_coordinate(&json!("35 deg 39' 29.99\"")).unwrap();
+        assert!(!has_hemi);
+        assert!((v - 35.658330).abs() < 1e-5);
+    }
+
+    #[test]
+    fn parses_dms_with_hemisphere() {
+        let (v, has_hemi) = parse_coordinate(&json!("139 deg 44' 28.80\" W")).unwrap();
+        assert!(has_hemi);
+        assert!((v + 139.741333).abs() < 1e-5);
+    }
+
+    #[test]
+    fn parses_decimal_and_numeric_values() {
+        assert!(!parse_coordinate(&json!(35.6583)).unwrap().1);
+        approx(Some(parse_coordinate(&json!(35.6583)).unwrap().0), 35.6583);
+        approx(Some(parse_coordinate(&json!("-35.6583")).unwrap().0), -35.6583);
+        approx(Some(parse_coordinate(&json!("35.6583 S")).unwrap().0), -35.6583);
+    }
+
+    #[test]
+    fn parses_xmp_degrees_minutes() {
+        let (v, has_hemi) = parse_coordinate(&json!("35,39.4999N")).unwrap();
+        assert!(has_hemi);
+        assert!((v - 35.658331).abs() < 1e-4);
+    }
+
+    #[test]
+    fn rejects_exiftool_placeholders() {
+        for raw in ["", "   ", "undef", "Unknown ()", "(Binary data 1024 bytes)"] {
+            assert!(parse_coordinate(&json!(raw)).is_none(), "{} を拒否できていません", raw);
+        }
+    }
+
+    /// Box の実レスポンス形式: GPS は `EXIF` グループに PrintConv 済み文字列、
+    /// 方位は `GPSLatitudeRef` に `North`/`South` として格納される。`Composite` は存在しない。
+    #[test]
+    fn extracts_location_from_box_exif_group() {
+        let meta = json!([{
+            "BoxNormalized": { "PageCount": null },
+            "EXIF": {
+                "DateTimeOriginal": "2026:07:26 14:58:02",
+                "GPSLatitude": "35 deg 39' 29.99\"",
+                "GPSLatitudeRef": "North",
+                "GPSLongitude": "139 deg 44' 28.80\"",
+                "GPSLongitudeRef": "East",
+                "GPSAltitude": "12.5 m"
+            },
+            "File": { "FileType": "JPEG" }
+        }]);
+        let (lat, lon, date) = extract_embedded_location_and_datetime(&meta);
+        approx(lat, 35.658330);
+        approx(lon, 139.741333);
+        assert_eq!(date.as_deref(), Some("2026:07:26 14:58:02"));
+    }
+
+    #[test]
+    fn applies_southern_and_western_refs() {
+        let meta = json!([{
+            "EXIF": {
+                "GPSLatitude": "33 deg 51' 54.00\"",
+                "GPSLatitudeRef": "South",
+                "GPSLongitude": "151 deg 12' 36.00\"",
+                "GPSLongitudeRef": "West"
+            }
+        }]);
+        let (lat, lon, _) = extract_embedded_location_and_datetime(&meta);
+        approx(lat, -33.865);
+        approx(lon, -151.21);
+    }
+
+    /// GPS タグはあるが値が空の写真（実データで確認済み）は位置情報なしとして扱う。
+    #[test]
+    fn treats_empty_gps_tags_as_missing() {
+        let meta = json!([{
+            "EXIF": {
+                "DateTimeOriginal": "2026:07:26 14:58:02",
+                "GPSAltitude": "undef",
+                "GPSLatitude": "",
+                "GPSLatitudeRef": "Unknown ()",
+                "GPSLongitude": "",
+                "GPSLongitudeRef": "Unknown ()"
+            }
+        }]);
+        let (lat, lon, date) = extract_embedded_location_and_datetime(&meta);
+        assert!(lat.is_none() && lon.is_none());
+        assert_eq!(date.as_deref(), Some("2026:07:26 14:58:02"));
+    }
+
+    #[test]
+    fn supports_composite_gps_position() {
+        let meta = json!([{
+            "Composite": { "GPSPosition": "35 deg 39' 29.99\" N, 139 deg 44' 28.80\" E" }
+        }]);
+        let (lat, lon, _) = extract_embedded_location_and_datetime(&meta);
+        approx(lat, 35.658330);
+        approx(lon, 139.741333);
+    }
+
+    /// 実 Box API に対する疎通確認。既定では無視される。
+    /// 実行例: `BOX_TOKEN=xxx BOX_FOLDER_ID=0 cargo test --bin kasugai_box -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn live_run_process_smoke() {
+        let token = std::env::var("BOX_TOKEN").expect("BOX_TOKEN が必要です");
+        let folder = std::env::var("BOX_FOLDER_ID").unwrap_or_else(|_| "0".to_string());
+        let out = std::env::temp_dir().join("kasugai_box_photo_test");
+        let result = run_process(token, vec![folder], out.to_string_lossy().to_string(), |p, m| {
+            println!("[{}%] {}", p, m);
+            true
+        })
+        .await
+        .expect("run_process が失敗しました");
+        println!("message: {}", result.message);
+        for r in result.records.iter().take(20) {
+            println!(
+                "{} lat={:?} lon={:?} date={:?}",
+                r.full_name, r.latitude, r.longitude, r.date_taken
+            );
+        }
+    }
+
+    #[test]
+    fn ignores_zero_zero_coordinates() {
+        let meta = json!([{
+            "EXIF": { "GPSLatitude": "0 deg 0' 0.00\"", "GPSLongitude": "0 deg 0' 0.00\"" }
+        }]);
+        let (lat, lon, _) = extract_embedded_location_and_datetime(&meta);
+        assert!(lat.is_none() && lon.is_none());
+    }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "kasugai_box"
-version = "3.0.5"
+version = "3.0.6"
 description = "kasugai_box API sidecar (HTTP/REST/MCP server for KASUGAI)"
 authors = ["you"]
 edition = "2021"
