@@ -190,6 +190,39 @@ cargo build --release
 
 ビルドが完了すると、`server/target/release/kasugai_box.exe` が生成されます。`python run.py -B` 実行時は同時に `download/kasugai_box.zip` へ圧縮・配置されます。
 
+### テスト
+
+```powershell
+cd C:\devin\kasugai_box\server
+cargo test --bin kasugai_box
+```
+
+Box の実 API に対する疎通確認テストは、課金・認証を伴うため既定で `#[ignore]` です。実行するには Box 開発者トークンを指定します。
+
+```powershell
+cd C:\devin\kasugai_box\server
+$env:BOX_TOKEN="<Box 開発者トークン>"
+$env:BOX_FOLDER_ID="<フォルダID または 0>"
+cargo test --bin kasugai_box -- --ignored --nocapture live_run_process
+```
+
+### Box 埋め込みメタデータの仕様
+
+`server/src/box_api.rs` の `fetch_embedded_metadata` は
+`GET /2.0/files/:id?fields=representations` に `x-rep-hints: [embedded_metadata]`
+を付けて ExifTool 形式の JSON を取得します。ondemand 生成のため `state` が `none`
+のときは `info.url` を GET して生成をトリガーし、`success` / `viewable` になるまでポーリングします。
+
+実レスポンスで確認済みの注意点:
+
+| 項目 | 内容 |
+| :--- | :--- |
+| グループ構成 | `File` / `EXIF` / `XMP` / `JFIF` / `Photoshop` / `BoxNormalized` など。ExifTool の `Composite` グループは**返ってこない**ため `Composite.GPSPosition` に依存できない |
+| GPS 値の形式 | `EXIF` グループに PrintConv 済みの**文字列**で入る（例: `GPSLatitude: "35 deg 39' 29.99\""`）。方位記号は値に含まれない |
+| 方位（南緯・西経） | `GPSLatitudeRef` に `"North"` / `"South"` として格納される（`"N"` / `"S"` ではない） |
+| 位置情報なしの写真 | タグ自体は存在し、`""` / `"undef"` / `"Unknown ()"` を返すため値なしとして扱う必要がある |
+| 撮影日時 | `EXIF.DateTimeOriginal` に `"2026:07:26 14:58:02"` 形式で入る |
+
 ---
 
 ## 注意事項
