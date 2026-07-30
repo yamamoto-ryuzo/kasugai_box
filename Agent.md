@@ -201,13 +201,15 @@ FunctionEnd
 cd <project_root>
 python run.py -B
 # または
+python run.py b
+# または
 cd server
 cargo build --release
 cd ..
 makensis installer\<app>.nsi
 ```
 
-`run.py -B` であれば以下を一括実行するのが推奨されます。
+`run.py -B` または `python run.py b` であれば以下を一括実行するのが推奨されます。
 
 1. `cargo build --release`
 2. `download/<app>.zip` へ EXE を圧縮
@@ -230,3 +232,23 @@ makensis installer\<app>.nsi
 - `server/Cargo.toml`
 - `web/index.html`
 - `run.py`
+
+## 8. run.py 仕様書
+
+`run.py` はプロジェクトルートから実行するラッパースクリプトです。
+
+| 引数 | 動作 |
+|---|---|
+| （引数なし） | `cargo run` で開発モードを起動 |
+| `-b`, `-B`, `--build` | リリースビルド、ZIP 作成、可能であればインストーラー作成 |
+| `b` または `B`（位置引数） | `--build` と同じ |
+| `--installer` | リリースビルド後に NSIS インストーラーを作成 |
+| `--release` | `target/release/<app>.exe` を起動 |
+
+`python run.py -B` は以下を一括実行します。
+
+1. `cargo build --release`
+2. `download/<app>.zip` へ EXE を圧縮
+3. `makensis.exe` が利用可能なら `download/<app>_setup.exe` を生成
+
+`b/B` を位置引数に使えるため、`python run.py b` でも同じビルド・配布が実行されます。
