@@ -7,7 +7,7 @@ ManifestDPIAware true
 Name "kasugai_box"
 OutFile "..\download\kasugai_box_setup.exe"
 InstallDir "C:\kasugai\kasugai_box"
-RequestExecutionLevel admin
+RequestExecutionLevel user
 
 !define MUI_ABORTWARNING
 ; icon.ico は 16x16 から 256x256 までのマルチサイズ ICO を含む

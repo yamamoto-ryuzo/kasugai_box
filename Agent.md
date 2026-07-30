@@ -85,6 +85,8 @@ if open_browser {
 }
 ```
 
+なお、この多重起動防止はバージョンアップ時にも利用します。新しい EXE を同じ `C:\<vendor>\<app>` へ上書き配置して起動すれば、旧プロセスは自動的に停止するため、インストーラー側で強制終了する処理を別途用意する必要はありません。
+
 ### 2.3 EXE アイコンの埋め込み
 
 1. `server/assets/icon.ico` にマルチサイズ ICO を配置（16, 32, 48, 64, 128, 256）
@@ -141,8 +143,8 @@ async fn serve_favicon() -> impl IntoResponse {
 - MUI2 を使用したモダン UI
 - Unicode 対応
 - DPIAware
-- 管理者権限で実行（`RequestExecutionLevel admin`）
-- 既定インストール先：`C:\<vendor>\<app>`
+- 管理者権限を要求しないユーザー権限実行（`RequestExecutionLevel user`）
+- 既定インストール先：`C:\<vendor>\<app>` （ユーザーが書き込み権限を持つディレクトリ。例：`C:\kasugai\kasugai_box`）
 
 ### 4.2 マルチサイズ ICO の明示
 
@@ -252,3 +254,4 @@ makensis installer\<app>.nsi
 3. `makensis.exe` が利用可能なら `download/<app>_setup.exe` を生成
 
 `b/B` を位置引数に使えるため、`python run.py b` でも同じビルド・配布が実行されます。
+
