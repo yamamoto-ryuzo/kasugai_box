@@ -255,3 +255,35 @@ makensis installer\<app>.nsi
 
 `b/B` を位置引数に使えるため、`python run.py b` でも同じビルド・配布が実行されます。
 
+## 9. ダウンロード警告対策（インストーラー ZIP 化）
+
+### 9.1 背景
+
+ブラウザ（Chrome / Edge など）は、`.exe` ファイルを「よくダウンロードされていない」「危険な可能性がある」として警告し、ダウンロードをブロックすることがあります。これを回避するため、インストーラー EXE を ZIP 化して配布します。
+
+### 9.2 配布物の例
+
+- `download/<app>.exe` — インストーラー本体。自動更新（updater）用 `latest.json` はこちらを指します。
+- `download/<app>.exe.zip` — 上記インストーラーを ZIP 化したもの。ユーザー向け手動ダウンロード用。
+- `download/latest.json` — updater 用。`windows-x86_64` の `url` は `.exe` インストーラーのままにします。
+
+### 9.3 実装メモ
+
+Tauri の bundle `targets` には `zip` が存在しないため、`tauri.conf.json` で `targets: ["nsis"]`（または `["msi"]`）としておき、ビルド後に `run.py` などでインストーラー EXE を ZIP 化します。
+
+```python
+import zipfile
+
+# インストーラーを download/<app>.exe へコピー後
+dest_zip = os.path.join(download_dir, '<app>.exe.zip')
+with zipfile.ZipFile(dest_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
+    zf.write(dest_installer, os.path.basename(dest_installer))
+print(f"[Kasugai] インストーラー ZIP を生成しました: {dest_zip}")
+```
+
+### 9.4 注意点
+
+- ZIP 内にはインストーラー EXE 1 つを入れます。
+- updater 用の署名は ZIP ではなく、生のインストーラー EXE に対する `.sig` ファイルを使用します。
+- 完全に SmartScreen 警告を消すには EV コードサイニング証明書が必要です。
+
