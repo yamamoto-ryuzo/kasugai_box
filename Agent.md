@@ -287,3 +287,37 @@ print(f"[Kasugai] インストーラー ZIP を生成しました: {dest_zip}")
 - updater 用の署名は ZIP ではなく、生のインストーラー EXE に対する `.sig` ファイルを使用します。
 - 完全に SmartScreen 警告を消すには EV コードサイニング証明書が必要です。
 
+## 10. バージョンアップ仕様
+
+### 10.1 正本
+
+バージョン番号の正本は `server/Cargo.toml` の `package.version` とします。他の設定ファイルはこの値を基準に更新・検証します。
+
+### 10.2 更新対象ファイル
+
+バージョンアップ時に `server/Cargo.toml` と同じバージョンに合わせるファイルは以下の通りです。
+
+| ファイル | 更新箇所 | 例 |
+|---|---|---|
+| `server/Cargo.toml` | `package.version` | `version = "0.5.3"` |
+| `installer/<app>.nsi` | `VIProductVersion` / `FileVersion` | `VIProductVersion "0.5.3.0"`、`VIAddVersionKey "FileVersion" "0.5.3"` |
+| `download/latest.json` | `version` / `notes` | `"version": "0.5.3"`、`"notes": "KASUGAI <app> 0.5.3"` |
+| `README.md` | 現在バージョン記述 | `現在のバージョンは **0.5.3** です。` |
+| `CHANGELOG.md` | 最新のバージョン見出しと比較リンク | `## [0.5.3] - 2026-08-05`、`[0.5.3]: ...compare/v0.5.2...v0.5.3` |
+
+`server/Cargo.lock` は `cargo build` 時に自動的に更新されます。
+
+### 10.3 リリース手順
+
+1. `server/Cargo.toml` の `package.version` を更新する
+2. 上記の各ファイルを同じバージョンに合わせて更新する
+3. `python run.py -b` でリリースビルド、ZIP、NSIS インストーラーを作成する
+4. ソース・ビルド成果物を GitHub に commit/push する
+5. 必要に応じて `vX.Y.Z` タグを作成・push する
+
+### 10.4 自動整合性チェック
+
+複数ファイルのバージョンズレを防ぐため、`run.py` のリリースビルド前に `check_versions()` を実行することを推奨します。`check_versions()` の実装例は `kasugai_canvas/run.py` を参照してください。
+
+`check_versions()` は `server/Cargo.toml` のバージョンを読み取り、`installer/<app>.nsi`、`download/latest.json`、`README.md`、`CHANGELOG.md` のバージョンが一致しているかを検証します。一致しない場合はどのファイルがずれているかを出力してビルドを中断します。
+
