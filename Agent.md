@@ -263,9 +263,10 @@ makensis installer\<app>.nsi
 
 ### 9.2 配布物の例
 
-- `download/<app>.exe` — インストーラー本体。自動更新（updater）用 `latest.json` はこちらを指します。
-- `download/<app>.exe.zip` — 上記インストーラーを ZIP 化したもの。ユーザー向け手動ダウンロード用。
-- `download/latest.json` — updater 用。`windows-x86_64` の `url` は `.exe` インストーラーのままにします。
+- `download/<app>.zip` — アプリ本体の配布用 ZIP。自動更新（updater）用 `latest.json` はこちらを指します。
+- `download/<app>_setup.exe` — NSIS インストーラー本体。
+- `download/<app>_setup.zip` — 上記インストーラーを ZIP 化したもの。ユーザー向け手動ダウンロード用。
+- `download/latest.json` — updater 用。`windows-x86_64` の `url` は `main` ブランチの `download/<app>.zip` を指す `https://raw.githubusercontent.com/<owner>/<repo>/main/download/<app>.zip` とします。
 
 ### 9.3 実装メモ
 
@@ -274,8 +275,8 @@ Tauri の bundle `targets` には `zip` が存在しないため、`tauri.conf.j
 ```python
 import zipfile
 
-# インストーラーを download/<app>.exe へコピー後
-dest_zip = os.path.join(download_dir, '<app>.exe.zip')
+# インストーラーは download/<app>_setup.exe として生成されている想定
+dest_zip = os.path.join(download_dir, '<app>_setup.zip')
 with zipfile.ZipFile(dest_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
     zf.write(dest_installer, os.path.basename(dest_installer))
 print(f"[Kasugai] インストーラー ZIP を生成しました: {dest_zip}")
@@ -284,14 +285,14 @@ print(f"[Kasugai] インストーラー ZIP を生成しました: {dest_zip}")
 ### 9.4 注意点
 
 - ZIP 内にはインストーラー EXE 1 つを入れます。
-- updater 用の署名は ZIP ではなく、生のインストーラー EXE に対する `.sig` ファイルを使用します。
+- 自動更新が `<app>.zip` を直接ダウンロード・差し替える場合、署名はその ZIP に対する `.sig` ファイルを使用します。NSIS インストーラー EXE 自体の改竄防止にも個別の `.sig` を付与できます。
 - 完全に SmartScreen 警告を消すには EV コードサイニング証明書が必要です。
 
 ## 10. バージョンアップ仕様
 
 ### 10.1 正本
 
-バージョン番号の正本は `server/Cargo.toml` の `package.version` とします。他の設定ファイルはこの値を基準に更新・検証します。
+バージョン番号の正本は `server/Cargo.toml` の `package.version` とします。他の設定ファイルはこの値を基準に更新・検証し、バージョン管理は `main` ブランチで完結させます。
 
 ### 10.2 更新対象ファイル
 
@@ -312,7 +313,7 @@ print(f"[Kasugai] インストーラー ZIP を生成しました: {dest_zip}")
 1. `server/Cargo.toml` の `package.version` を更新する
 2. 上記の各ファイルを同じバージョンに合わせて更新する
 3. `python run.py -b` でリリースビルド、ZIP、NSIS インストーラーを作成する
-4. ソース・ビルド成果物を GitHub に commit/push する
+4. ソース・ビルド成果物を GitHub の `main` ブランチへ commit/push する
 5. 必要に応じて `vX.Y.Z` タグを作成・push する
 
 ### 10.4 自動整合性チェック
