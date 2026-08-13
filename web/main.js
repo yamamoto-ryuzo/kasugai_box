@@ -325,6 +325,11 @@ async function checkUpdate(currentVersion) {
 }
 
 async function installUpdate() {
+  const latestVersion = $("latest-version").textContent || "最新版";
+  if (!confirm(`新しいバージョン ${latestVersion} が利用可能です。ダウンロードしてインストールしますか？`)) {
+    $("version-status").textContent = "アップデートをキャンセルしました";
+    return;
+  }
   $("version-status").textContent = "最新版をダウンロードして自動インストールを準備中...";
   $("install-update").disabled = true;
   try {
