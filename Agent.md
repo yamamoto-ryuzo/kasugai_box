@@ -112,6 +112,38 @@ fn main() -> std::io::Result<()> {
 }
 ```
 
+### 2.4 キャッシュバスティング（インストール/バージョンアップ時のエラー対策）
+
+インストールやバージョンアップの直後に、ブラウザが旧バージョンの `main.js` や `styles.css` をキャッシュから読み込み、UI が新しい API と噛み合わずエラーになることがあります。これを防ぐため、キャッシュバスティングを導入します。
+
+- `index.html` から参照するアセットの URL に、アプリのバージョンをクエリパラメータとして付与します。
+
+```html
+<link rel="stylesheet" href="/styles.css?v=<version>" />
+<script type="module" src="/main.js?v=<version>" defer></script>
+```
+
+- サーバー側では `index.html` の配信時に `<version>` プレースホルダを `env!("CARGO_PKG_VERSION")` で置換します。バージョンが変わると URL が変わるため、ブラウザは必ず新しいアセットを取得します。
+
+```rust
+async fn serve_index() -> impl IntoResponse {
+    let html = INDEX_HTML.replace("<version>", env!("CARGO_PKG_VERSION"));
+    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html)
+}
+```
+
+- あわせて `index.html` 自体は `Cache-Control: no-cache` で配信し、常に最新の HTML（＝最新のバージョン付き URL）が取得されるようにします。
+
+```rust
+(
+    [
+        (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+        (header::CACHE_CONTROL, "no-cache"),
+    ],
+    html,
+)
+```
+
 ## 3. アイコンの作成と配置
 
 元画像（PNG など）から 16x16 〜 256x256 のマルチサイズ ICO を生成し、以下の場所に配置します。
@@ -220,6 +252,7 @@ makensis installer\<app>.nsi
 ## 6. 検証観点
 
 - ショートカットをダブルクリックするとブラウザが開く
+- バージョンアップ後にブラウザをリロードすると、新バージョンの JS/CSS が読み込まれる（キャッシュバスティング）
 - 2 回目以降のダブルクリックで新しいプロセスが増えない
 - インストーラー自体のアイコンが正しく表示される
 - タスクバー/スタートメニューのアイコンが正しく表示される
