@@ -2,7 +2,12 @@
 
 本ドキュメントは、Rust 製の API/サイドカー型アプリを Windows 向けに配布する際の、NSIS インストーラーと「コンソール非表示 + ブラウザ起動」ショートカットの設計・実装パターンをまとめたものです。
 
-`kasugai_box` の実装をベースとしており、他のアプリへの流用を目的としています。
+特定プロダクトの実装をベースとしており、他のアプリへの流用を目的としています。本文中の `<app>`、`<App>`、`<vendor>`、`<version>` はそれぞれ以下を表すプレースホルダです。
+
+- `<app>`：アプリの小文字の実行ファイル名兼パッケージ名
+- `<App>`：製品表示名
+- `<vendor>`：ベンダー/組織名（`C:\<vendor>\<app>` などの親ディレクトリ名）
+- `<version>`：バージョン番号
 
 ## 1. 前提・対象
 
@@ -10,6 +15,7 @@
 - Rust（axum など）で実装された HTTP サービス
 - 配布物は単一 EXE + NSIS インストーラー（`download/*.zip`、`download/*_setup.exe`）
 - UI はブラウザ/WebView 上で表示される
+- ポート番号、配布 URL、プロダクト名はプロジェクトに応じて置き換える
 
 ## 2. アプリケーション側の設計
 
@@ -45,20 +51,21 @@ let listener = 'bind: loop {
                 .map(|r| r.status().is_success())
                 .unwrap_or(false);
             if !existing {
-                eprintln!("ポート {} で起動できません: {}", port, e);
+                eprintln!("<app>: ポート {} で起動できません: {}", port, e);
+                eprintln!("環境変数 <APP>_PORT で別のポートを指定してください。");
                 std::process::exit(1);
             }
-            println!("既にポート {} で起動しています。古いインスタンスを停止します。", port);
+            println!("<app> は既にポート {} で起動しています。古いインスタンスを停止します。", port);
             let stop_url = format!("http://127.0.0.1:{}/api/v1/server/stop", port);
             let _ = reqwest::Client::new().post(&stop_url).send().await;
             for _ in 1..=60 {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 if let Ok(l) = tokio::net::TcpListener::bind(addr).await {
-                    println!("ポート {} を確保しました。新しいインスタンスを起動します。", port);
+                    println!("<app>: ポート {} を確保しました。新しいインスタンスを起動します。", port);
                     break 'bind l;
                 }
             }
-            eprintln!("ポート {} の解放を待ちましたが、起動できません: {}", port, e);
+            eprintln!("<app>: ポート {} の解放を待ちましたが、起動できません: {}", port, e);
             std::process::exit(1);
         }
     }
@@ -128,21 +135,36 @@ fn main() -> std::io::Result<()> {
 ```rust
 async fn serve_index() -> impl IntoResponse {
     let html = INDEX_HTML.replace("<version>", env!("CARGO_PKG_VERSION"));
-    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html)
+    (
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        html,
+    )
 }
 ```
 
 - あわせて `index.html` 自体は `Cache-Control: no-cache` で配信し、常に最新の HTML（＝最新のバージョン付き URL）が取得されるようにします。
 
-```rust
-(
-    [
-        (header::CONTENT_TYPE, "text/html; charset=utf-8"),
-        (header::CACHE_CONTROL, "no-cache"),
-    ],
-    html,
-)
-```
+### 2.5 自動バージョンアップ（任意）
+
+配布 URL の `download/latest.json` を参照し、UI またはバックグラウンドで新バージョンを検知・ダウンロード・差し替える仕組みを実装できます。
+
+実装の基本構成は以下の通りです。
+
+- `latest.json` の配信元 URL をアプリ内に定数（例：`<base_url>/download/latest.json`）として保持します。
+- `GET /api/v1/update/latest`：最新版情報を取得し、クライアントへ返します。
+- `POST /api/v1/update/install`：
+  1. `latest.json` から `platforms.windows-x86_64.url` を取得
+  2. 一時ディレクトリへ ZIP をダウンロード
+  3.  PowerShell `Expand-Archive` で展開
+  4. 展開された新 EXE を使い、親プロセス終了後に上書き＆再起動する PowerShell スクリプトを生成
+  5. 別プロセスでスクリプトを起動し、自身はシャットダウン
+- `POST /api/v1/server/restart`：現在の EXE から `--open-browser` 付きで新プロセスを起動します。§2.2 の多重起動防止により、旧プロセスは自動停止されます。
+- Web UI 側では、現在バージョン（`/health` の `version`）と最新バージョンを比較し、更新があればダウンロード/インストールボタンを表示します。`autoUpdate` 設定が有効な場合、確認ダイアログなしで自動インストールを開始できます。
+
+EXE は実行中に自分自身を上書きできないため、別プロセス（PowerShell など）で親 PID の終了を待ってから `Copy-Item` し、新しい EXE を起動する方式を推奨します。
 
 ## 3. アイコンの作成と配置
 
@@ -176,7 +198,7 @@ async fn serve_favicon() -> impl IntoResponse {
 - Unicode 対応
 - DPIAware
 - 管理者権限を要求しないユーザー権限実行（`RequestExecutionLevel user`）
-- 既定インストール先：`C:\<vendor>\<app>` （ユーザーが書き込み権限を持つディレクトリ。例：`C:\kasugai\kasugai_box`）
+- 既定インストール先：`C:\<vendor>\<app>` （ユーザーが書き込み権限を持つディレクトリ）
 
 ### 4.2 マルチサイズ ICO の明示
 
@@ -194,7 +216,7 @@ async fn serve_favicon() -> impl IntoResponse {
 アイコンは EXE 内の埋め込みアイコンを使用します。
 
 ```nsis
-CreateShortcut "$SMPROGRAMS\<app>\<app>.lnk" \
+CreateShortcut "$SMPROGRAMS\<App>\<App>.lnk" \
     "$INSTDIR\<app>.exe" \
     "--open-browser" \
     "$INSTDIR\<app>.exe" 0 SW_SHOWNORMAL "" "" "$INSTDIR"
@@ -222,7 +244,7 @@ CreateShortcut "$SMPROGRAMS\<app>\<app>.lnk" \
 
 ```nsis
 Function CreateDesktopShortcut
-  CreateShortcut "$DESKTOP\<app>.lnk" \
+  CreateShortcut "$DESKTOP\<App>.lnk" \
       "$INSTDIR\<app>.exe" \
       "--open-browser" \
       "$INSTDIR\<app>.exe" 0 SW_SHOWNORMAL "" "" "$INSTDIR"
@@ -243,7 +265,7 @@ cd ..
 makensis installer\<app>.nsi
 ```
 
-`run.py -B` または `python run.py b` であれば以下を一括実行するのが推奨されます。
+`python run.py -B` または `python run.py b` であれば以下を一括実行するのが推奨されます。
 
 1. `cargo build --release`
 2. `download/<app>.zip` へ EXE を圧縮
@@ -258,10 +280,11 @@ makensis installer\<app>.nsi
 - タスクバー/スタートメニューのアイコンが正しく表示される
 - ファビコンがブラウザタブに表示される
 - アンインストールでスタートメニュー・デスクトップのショートカットが削除される
+- （自動更新を実装する場合）更新後に新しい EXE が起動し、UI が最新バージョンを表示する
 
-## 7. 参考ファイル（kasugai_box の実装例）
+## 7. 参考ファイル（実装例）
 
-- `installer/kasugai_box.nsi`
+- `installer/<app>.nsi`
 - `server/src/main.rs`
 - `server/build.rs`
 - `server/Cargo.toml`
@@ -292,18 +315,18 @@ makensis installer\<app>.nsi
 
 ### 9.1 背景
 
-ブラウザ（Chrome / Edge など）は、`.exe` ファイルを「よくダウンロードされていない」「危険な可能性がある」として警告し、ダウンロードをブロックすることがあります。これを回避するため、インストーラー EXE を ZIP 化して配布します。
+ブラウザ（Chrome / Edge など）は、`.exe` ファイルを「よくダウンロードされていない」「危険な可能性がある」として警告し、ダウンロードをブロックすることがあります。これを回避するため、インストーラー EXE を ZIP 化して配布することがあります。
 
 ### 9.2 配布物の例
 
 - `download/<app>.zip` — アプリ本体の配布用 ZIP。自動更新（updater）用 `latest.json` はこちらを指します。
 - `download/<app>_setup.exe` — NSIS インストーラー本体。
 - `download/<app>_setup.zip` — 上記インストーラーを ZIP 化したもの。ユーザー向け手動ダウンロード用。
-- `download/latest.json` — updater 用。`windows-x86_64` の `url` は `main` ブランチの `download/<app>.zip` を指す `https://raw.githubusercontent.com/<owner>/<repo>/main/download/<app>.zip` とします。
+- `download/latest.json` — updater 用。`windows-x86_64` の `url` は、例えば GitHub 配布であれば `https://<host>/<owner>/<repo>/main/download/<app>.zip` を指します。
 
 ### 9.3 実装メモ
 
-Tauri の bundle `targets` には `zip` が存在しないため、`tauri.conf.json` で `targets: ["nsis"]`（または `["msi"]`）としておき、ビルド後に `run.py` などでインストーラー EXE を ZIP 化します。
+Tauri などのフレームワークでは bundle `targets` に `zip` が存在しない場合があります。そのような場合は、`tauri.conf.json` で `targets: ["nsis"]`（または `["msi"]`）としておき、ビルド後に `run.py` などでインストーラー EXE を ZIP 化します。
 
 ```python
 import zipfile
@@ -312,7 +335,7 @@ import zipfile
 dest_zip = os.path.join(download_dir, '<app>_setup.zip')
 with zipfile.ZipFile(dest_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
     zf.write(dest_installer, os.path.basename(dest_installer))
-print(f"[Kasugai] インストーラー ZIP を生成しました: {dest_zip}")
+print(f"[<App>] インストーラー ZIP を生成しました: {dest_zip}")
 ```
 
 ### 9.4 注意点
@@ -325,7 +348,7 @@ print(f"[Kasugai] インストーラー ZIP を生成しました: {dest_zip}")
 
 ### 10.1 正本
 
-バージョン番号の正本は `server/Cargo.toml` の `package.version` とします。他の設定ファイルはこの値を基準に更新・検証し、バージョン管理は `main` ブランチで完結させます。
+バージョン番号の正本は `server/Cargo.toml` の `package.version` とします。他の設定ファイルはこの値を基準に更新・検証し、バージョン管理は配布用ブランチ（例：`main`）で完結させます。
 
 ### 10.2 更新対象ファイル
 
@@ -333,11 +356,11 @@ print(f"[Kasugai] インストーラー ZIP を生成しました: {dest_zip}")
 
 | ファイル | 更新箇所 | 例 |
 |---|---|---|
-| `server/Cargo.toml` | `package.version` | `version = "0.5.3"` |
-| `installer/<app>.nsi` | `VIProductVersion` / `FileVersion` | `VIProductVersion "0.5.3.0"`、`VIAddVersionKey "FileVersion" "0.5.3"` |
-| `download/latest.json` | `version` / `notes` | `"version": "0.5.3"`、`"notes": "KASUGAI <app> 0.5.3"` |
-| `README.md` | 現在バージョン記述 | `現在のバージョンは **0.5.3** です。` |
-| `CHANGELOG.md` | 最新のバージョン見出しと比較リンク | `## [0.5.3] - 2026-08-05`、`[0.5.3]: ...compare/v0.5.2...v0.5.3` |
+| `server/Cargo.toml` | `package.version` | `version = "X.Y.Z"` |
+| `installer/<app>.nsi` | `VIProductVersion` / `FileVersion` | `VIProductVersion "X.Y.Z.0"`、`VIAddVersionKey "FileVersion" "X.Y.Z"` |
+| `download/latest.json` | `version` / `notes` | `"version": "X.Y.Z"`、`"notes": "<App> バージョン X.Y.Z"` |
+| `README.md` | 現在バージョン記述 | `現在のバージョンは **X.Y.Z** です。` |
+| `CHANGELOG.md` | 最新のバージョン見出しと比較リンク | `## [X.Y.Z] - YYYY-MM-DD`、`[X.Y.Z]: ...compare/vX.Y.Y...vX.Y.Z` |
 
 `server/Cargo.lock` は `cargo build` 時に自動的に更新されます。
 
@@ -346,12 +369,11 @@ print(f"[Kasugai] インストーラー ZIP を生成しました: {dest_zip}")
 1. `server/Cargo.toml` の `package.version` を更新する
 2. 上記の各ファイルを同じバージョンに合わせて更新する
 3. `python run.py -b` でリリースビルド、ZIP、NSIS インストーラーを作成する
-4. ソース・ビルド成果物を GitHub の `main` ブランチへ commit/push する
+4. ソース・ビルド成果物を Git リポジトリの配布ブランチへ commit/push する
 5. 必要に応じて `vX.Y.Z` タグを作成・push する
 
 ### 10.4 自動整合性チェック
 
-複数ファイルのバージョンズレを防ぐため、`run.py` のリリースビルド前に `check_versions()` を実行することを推奨します。`check_versions()` の実装例は `kasugai_canvas/run.py` を参照してください。
+複数ファイルのバージョンズレを防ぐため、`run.py` のリリースビルド前に `check_versions()` を実行することを推奨します。
 
-`check_versions()` は `server/Cargo.toml` のバージョンを読み取り、`installer/<app>.nsi`、`download/latest.json`、`README.md`、`CHANGELOG.md` のバージョンが一致しているかを検証します。一致しない場合はどのファイルがずれているかを出力してビルドを中断します。
-
+`check_versions()` は `server/Cargo.toml` のバージョンを読み取り、`installer/<app>.nsi`、`download/latest.json`、`README.md`、`CHANGELOG.md` のバージョンが一致しているかを検証します。一致しない場合はどのファイルがずれているかを出力してビルドを中断します。実装は各プロジェクトの `run.py` に組み込みます。
