@@ -4,6 +4,7 @@ version = "3.0.6"
 description = "kasugai_box API sidecar (HTTP/REST/MCP server for KASUGAI)"
 authors = ["you"]
 edition = "2021"
+license = "MIT"
 
 [dependencies]
 axum = "0.8"
