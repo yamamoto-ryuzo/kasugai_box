@@ -401,8 +401,31 @@ components:
             $ref: "#/components/schemas/PhotoRecord"
         csvPath: { type: string }
         geojsonPath: { type: string, nullable: true }
+        summaryPath: { type: string, nullable: true, description: 集計 JSON（box_photos_summary.json）のパス }
         outputDir: { type: string, description: 解決後の出力フォルダ絶対パス }
         message: { type: string }
+        summary:
+          $ref: "#/components/schemas/ProcessSummary"
+    ProcessSummary:
+      type: object
+      description: 出力集計（位置情報あり/フォールバック由来/なし/エラー/重複の件数内訳）
+      properties:
+        total: { type: integer }
+        located: { type: integer, description: 位置情報あり（metadata + fallback） }
+        locatedViaFallback: { type: integer, description: うちファイル名推定由来の件数 }
+        unlocated: { type: integer, description: 位置情報なし }
+        errors: { type: integer, description: メタデータ取得エラー件数 }
+        duplicates: { type: integer, description: 同名・同撮影日時の重複候補件数 }
+        needsConversion: { type: integer, description: JPEG/PNG 以外で表示用変換が必要な形式の件数 }
+        converter: { type: string, nullable: true, description: "検出した外部変換ツール（magick / ffmpeg）" }
+        formats:
+          type: object
+          additionalProperties: { type: integer }
+          description: 拡張子ごとの件数
+        errorSamples:
+          type: array
+          items: { type: string }
+          description: メタデータ取得エラーの例（先頭 5 件）
     PhotoRecord:
       type: object
       properties:
@@ -412,3 +435,7 @@ components:
         longitude: { type: number, nullable: true }
         dateTaken: { type: string, nullable: true }
         url: { type: string }
+        locationSource: { type: string, nullable: true, description: "metadata | fallback: filename" }
+        dateSource: { type: string, nullable: true, description: "metadata | fallback: filename | fallback: file-created" }
+        format: { type: string, description: 拡張子（小文字・ドットなし） }
+        duplicate: { type: boolean, description: 同名・同撮影日時の先行レコードがある場合 true }

@@ -32,6 +32,9 @@ pub struct BoxItem {
     pub shared_link: Option<BoxSharedLink>,
     #[serde(default)]
     pub path_collection: Option<BoxPathCollection>,
+    /// コンテンツの作成日時（Exif を持たない画像の撮影日フォールバックに使用）
+    #[serde(default)]
+    pub content_created_at: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]

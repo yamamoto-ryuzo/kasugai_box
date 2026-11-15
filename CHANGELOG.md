@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+- 位置情報を持たない画像のフォールバック推定：ファイル名中の「緯度_経度」表記（例 `IMG_20260101_35.12_139.45.jpg`）から位置を、`YYYYMMDD`/`YYYYMMDD_HHMMSS` から撮影日時を推定。由来は `locationSource`/`dateSource`（`metadata`/`fallback: filename`/`fallback: file-created`）で判別可能
+- 撮影日時が EXIF・ファイル名の双方で得られない場合、Box の `content_created_at` を `fallback: file-created` として使用
+- 処理対象拡張子を拡大（heif/png/gif/bmp/webp/dng/cr2/cr3/nef/arw/orf/rw2 を追加）
+- 出力集計：`ProcessResult.summary` に位置情報あり/フォールバック由来/なし/エラー/重複の件数内訳を返し、`box_photos_summary.json` も出力する
+- 同名・同撮影日時の画像を `duplicate` フラグで検出（2 件目以降に付与）
+- 画像形式の正規化に向け、変換対象（JPEG/PNG 以外）の件数を `needsConversion` で集計し、外部変換ツール（ImageMagick `magick`/`ffmpeg`）を検出して `converter` に報告
+- CSV/GeoJSON の各行にも `format`/`locationSource`/`dateSource`/`duplicate` を出力
+
 ## [3.0.6] - 2026-07-28
 
 Box サーバー側の埋め込みメタデータから写真の位置情報が取得できない不具合を修正しました。

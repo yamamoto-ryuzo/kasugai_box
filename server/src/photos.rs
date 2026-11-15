@@ -6,8 +6,11 @@ use regex::Regex;
 use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use crate::box_api::{fetch_embedded_metadata, BoxFolderItems, BoxItem, BoxPathCollection};
 
@@ -23,6 +26,14 @@ pub struct PhotoRecord {
     pub longitude: Option<f64>,
     pub date_taken: Option<String>,
     pub url: String,
+    /// 位置情報の由来。`metadata` / `fallback: filename`。未取得時は null。
+    pub location_source: Option<String>,
+    /// 撮影日の由来。`metadata` / `fallback: filename` / `fallback: file-created`。未取得時は null。
+    pub date_source: Option<String>,
+    /// 拡張子（小文字・ドットなし）。
+    pub format: String,
+    /// 同名・同撮影日時の先行レコードがある場合に true。
+    pub duplicate: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -31,8 +42,35 @@ pub struct ProcessResult {
     pub records: Vec<PhotoRecord>,
     pub csv_path: String,
     pub geojson_path: Option<String>,
+    pub summary_path: Option<String>,
     pub output_dir: String,
     pub message: String,
+    pub summary: ProcessSummary,
+}
+
+/// 出力集計。件数内訳をジョブ結果と `box_photos_summary.json` の両方で返す。
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessSummary {
+    pub total: usize,
+    /// 位置情報あり（メタデータ由来 + フォールバック由来）
+    pub located: usize,
+    /// うちファイル名推定由来の件数
+    pub located_via_fallback: usize,
+    /// 位置情報なし
+    pub unlocated: usize,
+    /// メタデータ取得エラー件数
+    pub errors: usize,
+    /// 同名・同撮影日時で重複フラグが立った件数
+    pub duplicates: usize,
+    /// JPEG/PNG 以外で表示用変換が必要な形式の件数
+    pub needs_conversion: usize,
+    /// 検出した外部変換ツール（`magick` または `ffmpeg`。未検出時は null）
+    pub converter: Option<String>,
+    /// 拡張子ごとの件数
+    pub formats: BTreeMap<String, usize>,
+    /// メタデータ取得エラーの例（先頭 5 件）
+    pub error_samples: Vec<String>,
 }
 
 fn resolve_output_dir(output_dir: &str) -> PathBuf {
@@ -91,6 +129,111 @@ fn is_placeholder(s: &str) -> bool {
         || t.eq_ignore_ascii_case("undef")
         || t.starts_with("Unknown")
         || t.starts_with("(Binary data")
+}
+
+/// 画像として処理対象にする拡張子（小文字）。
+const IMAGE_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "tif", "tiff", "heic", "heif", "png", "gif", "bmp", "webp", "dng", "cr2", "cr3",
+    "nef", "arw", "orf", "rw2",
+];
+
+fn image_extension(name: &str) -> String {
+    name.rsplit_once('.')
+        .map(|(_, e)| e.to_lowercase())
+        .unwrap_or_default()
+}
+
+/// ファイル名から位置情報・撮影日時を推定するフォールバック。
+/// `IMG_20260101_35.12_139.45.jpg` のような「緯度_経度」表記と `YYYYMMDD[_HHMMSS]` の日時に対応する。
+/// 戻り値は (緯度, 経度, 撮影日時)。いずれも推定できなければ None。
+fn parse_filename_fallback(name: &str) -> (Option<f64>, Option<f64>, Option<String>) {
+    let stem = Path::new(name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(name);
+
+    // 区切り文字で繋がれた 2 つの小数を緯度・経度とみなす。連番や日付の一部に
+    // 誤マッチしないよう、前後が数字・小数点でないことを要求する。
+    let coord_re =
+        Regex::new(r"(?:^|[^0-9.])(-?\d{1,3}\.\d+)[_,\s](-?\d{1,3}\.\d+)(?:[^0-9.]|$)").unwrap();
+    let mut lat = None;
+    let mut lon = None;
+    for caps in coord_re.captures_iter(stem) {
+        let la = caps[1].parse::<f64>().unwrap_or(f64::NAN);
+        let lo = caps[2].parse::<f64>().unwrap_or(f64::NAN);
+        if (-90.0..=90.0).contains(&la) && (-180.0..=180.0).contains(&lo) {
+            lat = Some(la);
+            lon = Some(lo);
+            break;
+        }
+    }
+
+    // 8 桁日付 YYYYMMDD（任意で後続 6 桁時刻 HHMMSS）を撮影日時とみなす。
+    let date_re = Regex::new(
+        r"(?:^|[^0-9])(\d{4})(\d{2})(\d{2})(?:[_-]?(\d{2})(\d{2})(\d{2}))?(?:[^0-9]|$)",
+    )
+    .unwrap();
+    let mut date = None;
+    for caps in date_re.captures_iter(stem) {
+        let month: u32 = caps[2].parse().unwrap_or(0);
+        let day: u32 = caps[3].parse().unwrap_or(0);
+        if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+            continue;
+        }
+        if let (Some(h), Some(mi), Some(s)) = (caps.get(4), caps.get(5), caps.get(6)) {
+            let (h, mi, s) = (
+                h.as_str().parse::<u32>().unwrap_or(99),
+                mi.as_str().parse::<u32>().unwrap_or(99),
+                s.as_str().parse::<u32>().unwrap_or(99),
+            );
+            if h <= 23 && mi <= 59 && s <= 59 {
+                date = Some(format!(
+                    "{}-{}-{} {:02}:{:02}:{:02}",
+                    &caps[1], &caps[2], &caps[3], h, mi, s
+                ));
+                break;
+            }
+        }
+        date = Some(format!("{}-{}-{}", &caps[1], &caps[2], &caps[3]));
+        break;
+    }
+
+    (lat, lon, date)
+}
+
+/// 画像→JPEG/PNG 変換に使える外部ツールを検出する。見つかった最初のツール名を返す。
+/// windows サブシステム EXE から起動するため、コンソールウィンドウを出さない。
+fn detect_converter() -> Option<String> {
+    for tool in ["magick", "ffmpeg"] {
+        let mut cmd = Command::new(tool);
+        cmd.arg("-version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        if cmd.status().map(|s| s.success()).unwrap_or(false) {
+            return Some(tool.to_string());
+        }
+    }
+    None
+}
+
+/// 同名・同撮影日時のレコードを重複としてフラグする（2 件目以降に立てる）。
+/// 撮影日時が取れていないもの同士は判定材料がないため対象外とする。
+fn flag_duplicates(records: &mut [PhotoRecord]) {
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    for r in records.iter_mut() {
+        let Some(date) = &r.date_taken else {
+            continue;
+        };
+        if !seen.insert((r.name.to_lowercase(), date.clone())) {
+            r.duplicate = true;
+        }
+    }
 }
 
 /// `N`/`S`/`E`/`W` および ExifTool PrintConv の `North`/`South`/`East`/`West` を符号に変換する。
@@ -292,7 +435,7 @@ where
             }
 
             let url = format!(
-                "https://api.box.com/2.0/folders/{}/items?limit={}&offset={}&fields=type,id,name",
+                "https://api.box.com/2.0/folders/{}/items?limit={}&offset={}&fields=type,id,name,content_created_at",
                 folder_id, limit, offset
             );
 
@@ -308,13 +451,7 @@ where
 
             for item in data.entries {
                 if item.r#type == "file" {
-                    let ext = item.name.to_lowercase();
-                    if ext.ends_with(".jpg")
-                        || ext.ends_with(".jpeg")
-                        || ext.ends_with(".tif")
-                        || ext.ends_with(".tiff")
-                        || ext.ends_with(".heic")
-                    {
+                    if IMAGE_EXTENSIONS.contains(&image_extension(&item.name).as_str()) {
                         image_files.push((item, parent_path.to_string()));
                     }
                 } else if item.r#type == "folder" {
@@ -355,7 +492,11 @@ fn create_geojson(file_path: &Path, records: &[PhotoRecord]) -> Result<()> {
                     "name": &r.name,
                     "full_name": &r.full_name,
                     "url": &r.url,
-                    "date_taken": &r.date_taken
+                    "date_taken": &r.date_taken,
+                    "location_source": &r.location_source,
+                    "date_source": &r.date_source,
+                    "format": &r.format,
+                    "duplicate": r.duplicate
                 }
             });
             features.push(feature);
@@ -422,13 +563,38 @@ pub async fn run_process(
         .buffer_unordered(METADATA_CONCURRENCY);
 
         while let Some((index, file, parent_path, meta)) = stream.next().await {
-            let (lat, lon, date_taken) = match meta {
+            let (mut lat, mut lon, mut date_taken) = match meta {
                 Ok(meta) => extract_embedded_location_and_datetime(&meta),
                 Err(e) => {
                     errors.push(format!("{}: {}", file.name, e));
                     (None, None, None)
                 }
             };
+            let mut location_source = if lat.is_some() && lon.is_some() {
+                Some("metadata".to_string())
+            } else {
+                None
+            };
+            let mut date_source = date_taken.as_ref().map(|_| "metadata".to_string());
+
+            // メタデータに値がない場合はファイル名・Box の作成日時でフォールバック推定する。
+            if lat.is_none() || lon.is_none() || date_taken.is_none() {
+                let (f_lat, f_lon, f_date) = parse_filename_fallback(&file.name);
+                if (lat.is_none() || lon.is_none()) && f_lat.is_some() && f_lon.is_some() {
+                    lat = f_lat;
+                    lon = f_lon;
+                    location_source = Some("fallback: filename".to_string());
+                }
+                if date_taken.is_none() {
+                    if let Some(d) = f_date {
+                        date_taken = Some(d);
+                        date_source = Some("fallback: filename".to_string());
+                    } else if let Some(d) = file.content_created_at.clone() {
+                        date_taken = Some(d);
+                        date_source = Some("fallback: file-created".to_string());
+                    }
+                }
+            }
 
             let url = format!("https://app.box.com/file/{}", file.id);
             let full_name = if parent_path.is_empty() {
@@ -438,12 +604,16 @@ pub async fn run_process(
             };
 
             slots[index] = Some(PhotoRecord {
-                name: file.name,
+                name: file.name.clone(),
                 full_name,
                 latitude: lat,
                 longitude: lon,
                 date_taken,
                 url,
+                location_source,
+                date_source,
+                format: image_extension(&file.name),
+                duplicate: false,
             });
 
             done += 1;
@@ -457,7 +627,8 @@ pub async fn run_process(
     for message in errors.iter().take(10) {
         eprintln!("[photos] メタデータ取得に失敗: {}", message);
     }
-    let records: Vec<PhotoRecord> = slots.into_iter().flatten().collect();
+    let mut records: Vec<PhotoRecord> = slots.into_iter().flatten().collect();
+    flag_duplicates(&mut records);
 
     let output = resolve_output_dir(&output_dir);
     fs::create_dir_all(&output).with_context(|| format!("出力フォルダを作成できません: {}", output_dir))?;
@@ -484,17 +655,58 @@ pub async fn run_process(
         .iter()
         .filter(|r| r.latitude.is_some() && r.longitude.is_some())
         .count();
+
+    let mut formats: BTreeMap<String, usize> = BTreeMap::new();
+    for r in &records {
+        *formats.entry(r.format.clone()).or_insert(0) += 1;
+    }
+    let summary = ProcessSummary {
+        total: records.len(),
+        located,
+        located_via_fallback: records
+            .iter()
+            .filter(|r| r.location_source.as_deref() == Some("fallback: filename"))
+            .count(),
+        unlocated: records.len() - located,
+        errors: errors.len(),
+        duplicates: records.iter().filter(|r| r.duplicate).count(),
+        needs_conversion: records
+            .iter()
+            .filter(|r| !matches!(r.format.as_str(), "jpg" | "jpeg" | "png"))
+            .count(),
+        converter: detect_converter(),
+        formats,
+        error_samples: errors.iter().take(5).cloned().collect(),
+    };
+    let summary_path = if records.is_empty() {
+        None
+    } else {
+        let path = output.join("box_photos_summary.json");
+        let file = fs::File::create(&path)?;
+        serde_json::to_writer_pretty(file, &summary)?;
+        Some(path.to_string_lossy().to_string())
+    };
+
     let mut message = if records.is_empty() {
         "対象ファイルが見つかりませんでした。".to_string()
     } else if geojson_path.is_some() {
         format!(
-            "{}件の画像を処理しました（位置情報あり {}件）。CSVとGeoJSONを出力しました。",
+            "{}件の画像を処理しました（位置情報あり {}件・うちフォールバック推定 {}件、位置情報なし {}件）。CSV・GeoJSON・集計JSONを出力しました。",
             records.len(),
-            located
+            located,
+            summary.located_via_fallback,
+            summary.unlocated
         )
     } else {
-        format!("{}件の画像を処理しました。位置情報が含まれていませんでした。", records.len())
+        format!(
+            "{}件の画像を処理しました（位置情報なし {}件）。CSV・集計JSONを出力しました。",
+            records.len(),
+            summary.unlocated
+        )
     };
+    if summary.duplicates > 0 {
+        message.push_str(&format!(" 重複候補が {}件あります。", summary.duplicates));
+    }
     if let Some(first) = errors.first() {
         message.push_str(&format!(
             " {}件のメタデータ取得に失敗しました（例: {}）。",
@@ -511,8 +723,10 @@ pub async fn run_process(
         records,
         csv_path: csv_path.to_string_lossy().to_string(),
         geojson_path,
+        summary_path,
         output_dir: output.to_string_lossy().to_string(),
         message,
+        summary,
     })
 }
 
@@ -657,5 +871,71 @@ mod tests {
         }]);
         let (lat, lon, _) = extract_embedded_location_and_datetime(&meta);
         assert!(lat.is_none() && lon.is_none());
+    }
+
+    #[test]
+    fn falls_back_to_filename_coordinates_and_date() {
+        let (lat, lon, date) = parse_filename_fallback("IMG_20260101_35.12_139.45.jpg");
+        approx(lat, 35.12);
+        approx(lon, 139.45);
+        assert_eq!(date.as_deref(), Some("2026-01-01"));
+    }
+
+    #[test]
+    fn falls_back_to_filename_datetime() {
+        let (_, _, date) = parse_filename_fallback("IMG_20260101_123456.jpg");
+        assert_eq!(date.as_deref(), Some("2026-01-01 12:34:56"));
+    }
+
+    #[test]
+    fn rejects_out_of_range_filename_numbers() {
+        let (lat, lon, _) = parse_filename_fallback("scan_200.5_30.1.jpg");
+        assert!(lat.is_none() && lon.is_none());
+    }
+
+    #[test]
+    fn flags_same_name_and_datetime_as_duplicate() {
+        let mut records = vec![
+            PhotoRecord {
+                name: "a.jpg".into(),
+                full_name: "d1/a.jpg".into(),
+                latitude: None,
+                longitude: None,
+                date_taken: Some("2026-01-01".into()),
+                url: "u1".into(),
+                location_source: None,
+                date_source: None,
+                format: "jpg".into(),
+                duplicate: false,
+            },
+            PhotoRecord {
+                name: "a.jpg".into(),
+                full_name: "d2/a.jpg".into(),
+                latitude: None,
+                longitude: None,
+                date_taken: Some("2026-01-01".into()),
+                url: "u2".into(),
+                location_source: None,
+                date_source: None,
+                format: "jpg".into(),
+                duplicate: false,
+            },
+            PhotoRecord {
+                name: "b.jpg".into(),
+                full_name: "d1/b.jpg".into(),
+                latitude: None,
+                longitude: None,
+                date_taken: Some("2026-01-01".into()),
+                url: "u3".into(),
+                location_source: None,
+                date_source: None,
+                format: "jpg".into(),
+                duplicate: false,
+            },
+        ];
+        flag_duplicates(&mut records);
+        assert!(!records[0].duplicate);
+        assert!(records[1].duplicate);
+        assert!(!records[2].duplicate);
     }
 }
