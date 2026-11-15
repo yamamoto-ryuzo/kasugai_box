@@ -1,0 +1,680 @@
+{
+  "component": "kasugai_box",
+  "component_type": "rust_axum_sidecar",
+  "version": "3.0.6",
+  "driver": {
+    "type": "http",
+    "detect": "GET http://127.0.0.1:8410/health",
+    "launch": "server/target/debug/kasugai_box.exe (KASUGAI_BOX_PORT で変更可)",
+    "ready": "/health status=ok",
+    "control": "HTTP :8410 /api/v1/* + /mcp",
+    "detected_from": "config.rs DEFAULT_PORT=8410 / README"
+  },
+  "updated": "2026-11-15T22:47:55+09:00",
+  "features": [
+    {
+      "id": "srv.root_redirect",
+      "kind": "api_route",
+      "name": "/ → /ui",
+      "source": "server/src/main.rs",
+      "signature": "GET / → /ui",
+      "summary": "GET / → /ui",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "302→/ui"
+    },
+    {
+      "id": "srv.ui",
+      "kind": "api_route",
+      "name": "/ui",
+      "source": "server/src/main.rs",
+      "signature": "GET /ui",
+      "summary": "GET /ui",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "200 10.7KB"
+    },
+    {
+      "id": "srv.main_js",
+      "kind": "api_route",
+      "name": "/main.js",
+      "source": "server/src/main.rs",
+      "signature": "GET /main.js",
+      "summary": "GET /main.js",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "200"
+    },
+    {
+      "id": "srv.styles",
+      "kind": "api_route",
+      "name": "/styles.css",
+      "source": "server/src/main.rs",
+      "signature": "GET /styles.css",
+      "summary": "GET /styles.css",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "200"
+    },
+    {
+      "id": "srv.health",
+      "kind": "api_route",
+      "name": "/health",
+      "source": "server/src/main.rs",
+      "signature": "GET /health",
+      "summary": "GET /health",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "{name,status:ok,version}"
+    },
+    {
+      "id": "srv.openapi",
+      "kind": "api_route",
+      "name": "/openapi.yaml",
+      "source": "server/src/main.rs",
+      "signature": "GET /openapi.yaml",
+      "summary": "GET /openapi.yaml",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "200 14KB"
+    },
+    {
+      "id": "srv.favicon",
+      "kind": "api_route",
+      "name": "/favicon.ico",
+      "source": "server/src/main.rs",
+      "signature": "GET /favicon.ico",
+      "summary": "GET /favicon.ico",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "200"
+    },
+    {
+      "id": "srv.update_latest",
+      "kind": "api_route",
+      "name": "/api/v1/update/latest",
+      "source": "server/src/main.rs",
+      "signature": "GET /api/v1/update/latest",
+      "summary": "GET /api/v1/update/latest",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "200"
+    },
+    {
+      "id": "srv.update_install",
+      "kind": "api_route",
+      "name": "/api/v1/update/install",
+      "source": "server/src/main.rs",
+      "signature": "POST /api/v1/update/install",
+      "summary": "POST /api/v1/update/install",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "自己更新・破壊的のため実施せず"
+    },
+    {
+      "id": "api.config_get",
+      "kind": "api_route",
+      "name": "/api/v1/config",
+      "source": "server/src/main.rs",
+      "signature": "GET /api/v1/config",
+      "summary": "GET /api/v1/config",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "200 設定JSON"
+    },
+    {
+      "id": "api.config_post",
+      "kind": "api_route",
+      "name": "/api/v1/config",
+      "source": "server/src/main.rs",
+      "signature": "POST /api/v1/config",
+      "summary": "POST /api/v1/config",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "設定変更・副作用"
+    },
+    {
+      "id": "api.auth_login",
+      "kind": "api_route",
+      "name": "/api/v1/auth/box/login",
+      "source": "server/src/main.rs",
+      "signature": "POST /api/v1/auth/box/login",
+      "summary": "POST /api/v1/auth/box/login",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "Box OAuth・外部遷移"
+    },
+    {
+      "id": "api.auth_devtoken",
+      "kind": "api_route",
+      "name": "/api/v1/auth/box/developer-token",
+      "source": "server/src/main.rs",
+      "signature": "POST /api/v1/auth/box/developer-token",
+      "summary": "POST /api/v1/auth/box/developer-token",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "資格情報変更"
+    },
+    {
+      "id": "api.auth_status",
+      "kind": "api_route",
+      "name": "/api/v1/auth/box/status",
+      "source": "server/src/main.rs",
+      "signature": "GET /api/v1/auth/box/status",
+      "summary": "GET /api/v1/auth/box/status",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "200"
+    },
+    {
+      "id": "api.auth_logout",
+      "kind": "api_route",
+      "name": "/api/v1/auth/box/logout",
+      "source": "server/src/main.rs",
+      "signature": "POST /api/v1/auth/box/logout",
+      "summary": "POST /api/v1/auth/box/logout",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "認証状態変更"
+    },
+    {
+      "id": "api.open_folder",
+      "kind": "api_route",
+      "name": "/api/v1/open-folder",
+      "source": "server/src/main.rs",
+      "signature": "POST /api/v1/open-folder",
+      "summary": "POST /api/v1/open-folder",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "OS起動・副作用"
+    },
+    {
+      "id": "api.photos_process",
+      "kind": "api_route",
+      "name": "/api/v1/photos/process",
+      "source": "server/src/main.rs",
+      "signature": "POST /api/v1/photos/process",
+      "summary": "POST /api/v1/photos/process",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "要Box認証+実フォルダ(長時間ジョブ)"
+    },
+    {
+      "id": "api.job_cancel",
+      "kind": "api_route",
+      "name": "/api/v1/jobs/{id}/cancel",
+      "source": "server/src/main.rs",
+      "signature": "POST /api/v1/jobs/{id}/cancel",
+      "summary": "POST /api/v1/jobs/{id}/cancel",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "対象ジョブ無し"
+    },
+    {
+      "id": "api.job_get",
+      "kind": "api_route",
+      "name": "/api/v1/jobs/{id}",
+      "source": "server/src/main.rs",
+      "signature": "GET /api/v1/jobs/{id}",
+      "summary": "GET /api/v1/jobs/{id}",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "未存在id→404(正常系応答)"
+    },
+    {
+      "id": "api.box_chat",
+      "kind": "api_route",
+      "name": "/api/v1/box/chat",
+      "source": "server/src/main.rs",
+      "signature": "POST /api/v1/box/chat",
+      "summary": "POST /api/v1/box/chat",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "要Box認証+LLM"
+    },
+    {
+      "id": "api.mcp_client_tools",
+      "kind": "api_route",
+      "name": "/api/v1/mcp-client/tools",
+      "source": "server/src/main.rs",
+      "signature": "GET /api/v1/mcp-client/tools",
+      "summary": "GET /api/v1/mcp-client/tools",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "未設定時は500+明確なerror文(正常系)"
+    },
+    {
+      "id": "api.mcp_client_call",
+      "kind": "api_route",
+      "name": "/api/v1/mcp-client/call",
+      "source": "server/src/main.rs",
+      "signature": "POST /api/v1/mcp-client/call",
+      "summary": "POST /api/v1/mcp-client/call",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "要MCP接続設定"
+    },
+    {
+      "id": "api.server_status",
+      "kind": "api_route",
+      "name": "/api/v1/server/status",
+      "source": "server/src/main.rs",
+      "signature": "GET /api/v1/server/status",
+      "summary": "GET /api/v1/server/status",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "200"
+    },
+    {
+      "id": "api.server_stop",
+      "kind": "api_route",
+      "name": "/api/v1/server/stop",
+      "source": "server/src/main.rs",
+      "signature": "POST /api/v1/server/stop",
+      "summary": "POST /api/v1/server/stop",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "制御経路を断つため実施せず"
+    },
+    {
+      "id": "api.server_restart",
+      "kind": "api_route",
+      "name": "/api/v1/server/restart",
+      "source": "server/src/main.rs",
+      "signature": "POST /api/v1/server/restart",
+      "summary": "POST /api/v1/server/restart",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "制御経路を断つため実施せず"
+    },
+    {
+      "id": "srv.mcp",
+      "kind": "api_route",
+      "name": "/mcp",
+      "source": "server/src/main.rs",
+      "signature": "POST /mcp",
+      "summary": "POST /mcp",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "curl :8410"
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "tools/list→6ツール応答"
+    },
+    {
+      "id": "mcp.box_whoami",
+      "kind": "ai_integration",
+      "name": "box_whoami",
+      "source": "server/src/mcp_server.rs",
+      "signature": "box_whoami()",
+      "summary": "Boxログインユーザ情報",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410",
+        "MCP"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "POST /mcp tools/call"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "要Box認証"
+    },
+    {
+      "id": "mcp.box_search",
+      "kind": "ai_integration",
+      "name": "box_search",
+      "source": "server/src/mcp_server.rs",
+      "signature": "box_search()",
+      "summary": "Box標準検索",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410",
+        "MCP"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "POST /mcp tools/call"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "要Box認証"
+    },
+    {
+      "id": "mcp.box_list_folder",
+      "kind": "ai_integration",
+      "name": "box_list_folder",
+      "source": "server/src/mcp_server.rs",
+      "signature": "box_list_folder()",
+      "summary": "フォルダ一覧",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410",
+        "MCP"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "POST /mcp tools/call"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "要Box認証"
+    },
+    {
+      "id": "mcp.box_create_shared_link",
+      "kind": "ai_integration",
+      "name": "box_create_shared_link",
+      "source": "server/src/mcp_server.rs",
+      "signature": "box_create_shared_link()",
+      "summary": "共有リンク作成",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410",
+        "MCP"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "POST /mcp tools/call"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "要Box認証"
+    },
+    {
+      "id": "mcp.photos_process",
+      "kind": "ai_integration",
+      "name": "photos_process",
+      "source": "server/src/mcp_server.rs",
+      "signature": "photos_process()",
+      "summary": "画像メタ→CSV/GeoJSON",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410",
+        "MCP"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "POST /mcp tools/call"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "要Box認証+実フォルダ"
+    },
+    {
+      "id": "mcp.job_status",
+      "kind": "ai_integration",
+      "name": "job_status",
+      "source": "server/src/mcp_server.rs",
+      "signature": "job_status()",
+      "summary": "ジョブ状態",
+      "needs_runtime": true,
+      "standalone_ok": false,
+      "depends": [
+        "axum :8410",
+        "MCP"
+      ],
+      "verify": {
+        "standalone": "",
+        "integrated": "POST /mcp tools/call"
+      },
+      "last_result": "skip",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "tools/list到達確認済・認証不要だがジョブ無し"
+    },
+    {
+      "id": "static.cargo_check",
+      "kind": "logic_fn",
+      "name": "cargo check",
+      "source": "server/Cargo.toml",
+      "signature": "cargo check",
+      "summary": "静的コンパイル検証",
+      "needs_runtime": false,
+      "standalone_ok": true,
+      "depends": [],
+      "verify": {
+        "standalone": "cargo check → Finished",
+        "integrated": ""
+      },
+      "last_result": "pass",
+      "last_verified": "2026-11-15T22:47:55+09:00",
+      "note": "v3.0.6 Finished 17.6s"
+    }
+  ]
+}
